@@ -92,6 +92,37 @@ A DIRETRIZ dá **boost de ativação ACT-R** aos alvos (o agente passa a
 influenciado por uma diretriz carrega o ULID dela em `parents` — fica
 provado *quem mandou investigar o quê, e o que resultou disso*.
 
+### Pipeline de Ingestão Universal (`pipeline.py`) — os bancos da AGU
+
+A AGU tem dezenas de bancos legados. O `pipeline.py` é o conector
+universal que os liga ao rio — **qualquer** banco com dialeto SQLAlchemy
+(Oracle, SQL Server, Postgres, MySQL, SQLite...) e qualquer pasta de
+depósito de ficheiros (PDF, DOCX, CSV, TXT, ZIP, MP3, MP4):
+
+```bash
+# Sincronização incremental de uma tabela (1 lote = 1 documento no log):
+python pipeline.py --db "oracle+oracledb://user:pw@host/svc" \
+    --table movimentacoes --incremental id \
+    --template "{origem} transferiu R$ {valor} para {destino} em {data}"
+
+# Pasta vigiada — PDFs, áudios e vídeos novos entram no rio sozinhos:
+python pipeline.py --watch-dir ./entrada --interval 30
+
+# Passagem única (para agendar em cron):
+python pipeline.py --db ... --table ... --incremental id --once
+```
+
+Garantias: **checkpoints idempotentes** (coluna incremental no SQL,
+SHA-256 por ficheiro — rodar duas vezes não duplica nada), credenciais
+nunca vão para o log (só o dialeto), e o `--template` converte linhas de
+tabela em frases canónicas que o parser do agente entende. A separação de
+papéis é estrita: o pipeline **ingere sem opinar**; o agente daemon
+**investiga sem tocar nas fontes**; os dois só se falam através do log.
+
+Teste e2e: `python test_pipeline.py` (SQLite legado com fracionamento +
+.txt com triangulação → o daemon deteta nas duas fontes e a proveniência
+identifica exatamente tabela/intervalo ou ficheiro/hash).
+
 ### Catálogo de Padrões de Fraude (`agent/patterns.py`)
 
 | Padrão | O que deteta | Severidade |
