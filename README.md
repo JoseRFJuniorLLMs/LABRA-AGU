@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="img/logo_labra.svg" alt="Logo LABRA-AGU" width="300">
+</p>
+
 # LABRA-AGU: Agente de IA Pericial e Investigativo
 
 O **Laboratório de Recuperação de Ativos (LABRA)**, vinculado à Advocacia-Geral da União (AGU), tem como missão o rastreamento, asfixia financeira e recuperação de bens e direitos desviados da União (corrupção, fraudes fiscais, lavagem de dinheiro, improbidade). 
