@@ -12,6 +12,8 @@ Este repositório contém a implementação em Python do **Agente de IA Pericial
 
 ## Arquitetura — sentidos, rio e cérebro
 
+![Diagrama de Arquitetura LABRA-AGU](img/arquitetura.png)
+
 ```
 Bancos da AGU (Oracle, MSSQL, Postgres...) ──┐
 Pasta de depósito (PDF, DOCX, MP3, MP4...) ──┤
