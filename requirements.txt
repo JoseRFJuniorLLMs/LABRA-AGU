@@ -2,3 +2,8 @@ grpcio==1.62.1
 grpcio-tools==1.62.1
 pydantic==2.6.4
 numpy==1.26.4
+pdfplumber
+python-docx
+moviepy
+SpeechRecognition
+pydub

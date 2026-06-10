@@ -6,12 +6,13 @@ Este repositório contém a implementação em Python do **Agente de IA Pericial
 
 ## O que este Agente faz?
 
-O Agente atua como um sistema investigativo proativo baseado em quatro diretrizes centrais:
+O Agente atua como um sistema investigativo proativo baseado em quatro diretrizes centrais e um motor de ingestão multimodal:
 
-1. **Parsing Estruturado (As Mãos)**: Recebe documentos não estruturados, usa Modelos de Linguagem (LLMs) via `Pydantic` e extrai entidades normatizadas (CPFs, CNPJs, Relações Societárias e Transações).
-2. **Investigação Contínua (O Cérebro)**: Rastreia nexo causal e descobre anomalias complexas (ex: triangulação cíclica de quotas transferidas para offshores administradas por parentes).
-3. **Filtro Sub-simbólico ACT-R (O Filtro)**: Avalia milhares de movimentações e aplica a fórmula de ativação de memória matemática (ACT-R). Eventos altamente conectados aos devedores e temporalmente recentes ganham score alto, evitando que a IA sofra "alucinação" com dados inúteis.
-4. **Relatório Pericial com Rastreabilidade**: Traduz o achado em uma narrativa jurídica conclusiva, listando os documentos que deram origem ao alerta (cadeia de custódia da prova).
+1. **Ingestão Multimodal (Os Olhos e Ouvidos)**: O Agente processa praticamente qualquer tipo de prova material. Ele extrai texto, CPFs, e transações de PDFs (processos), DOCX (contratos), CSV/TXT (extratos), arquivos ZIP, e até transcreve áudios e vídeos (MP3, MP4, WAV) de escutas telefônicas ou depoimentos.
+2. **Parsing Estruturado (As Mãos)**: Recebe documentos não estruturados da ingestão, usa Modelos de Linguagem (LLMs) via `Pydantic` e extrai entidades normatizadas (CPFs, CNPJs, Relações Societárias e Transações).
+3. **Investigação Contínua (O Cérebro)**: Rastreia nexo causal e descobre anomalias complexas (ex: triangulação cíclica de quotas transferidas para offshores administradas por parentes).
+4. **Filtro Sub-simbólico ACT-R (O Filtro)**: Avalia milhares de movimentações e aplica a fórmula de ativação de memória matemática (ACT-R). Eventos altamente conectados aos devedores e temporalmente recentes ganham score alto, evitando que a IA sofra "alucinação" com dados inúteis.
+5. **Relatório Pericial com Rastreabilidade**: Traduz o achado em uma narrativa jurídica conclusiva, listando os documentos que deram origem ao alerta (cadeia de custódia da prova).
 
 ## Como ele interage com o HeraclitusDB?
 
