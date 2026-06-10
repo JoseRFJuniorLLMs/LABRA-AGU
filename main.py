@@ -1,4 +1,3 @@
-import time
 import json
 import logging
 import argparse
@@ -9,18 +8,17 @@ from agent.reader import extract_text_from_file
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
-def run_agent(file_path: str = None):
+
+def run_agent(file_path: str = None, target: str = "localhost:7474"):
     logging.info("Iniciando Agente Pericial e Investigativo (LABRA-AGU)")
-    
+
     try:
-        client = HeraclitusClient('localhost:7474')
+        client = HeraclitusClient(target)
     except Exception as e:
         logging.error(f"Erro ao inicializar gRPC client: {e}")
         return
 
     investigator = Investigator()
-
-    logging.info("Agente conectado. Aguardando eventos do HeraclitusDB...")
 
     if file_path:
         logging.info(f"Extraindo texto do arquivo: {file_path}")
@@ -28,31 +26,48 @@ def run_agent(file_path: str = None):
         if not document_text:
             logging.error("Nenhum texto extraído do arquivo.")
             return
+        doc_ref = file_path
     else:
         # Modo simulação local, caso não haja arquivo
         document_text = """
         Relatório COAF / Junta Comercial:
-        O devedor CPF_645.254.302-49 transferiu quotas da empresa mãe para uma offshore 
-        CNPJ_OFFSHORE_01, que por sua vez nomeou o cunhado do devedor CPF_CUNHADO_001 como 
+        O devedor CPF_645.254.302-49 transferiu quotas da empresa mãe para uma offshore
+        CNPJ_OFFSHORE_01, que por sua vez nomeou o cunhado do devedor CPF_CUNHADO_001 como
         administrador com plenos poderes financeiros no dia 02/06/2026.
         """
-    
+        doc_ref = "CONTRATO_JUNTA_504"
+
+    # 0. Cadeia de custódia: o documento-fonte vira evento imutável no log
+    #    ANTES da análise. O insight apontará para o ULID real deste evento.
+    source_event_id = None
+    try:
+        doc_lsn = client.append_document(
+            "agente_pericial_labra_v1", document_text, attrs={"doc_ref": doc_ref}
+        )
+        source_event_id = client.resolve_event_id(doc_lsn)
+        logging.info(f"Documento-fonte no log: LSN={doc_lsn} ULID={source_event_id}")
+    except Exception as e:
+        logging.warning(f"HeraclitusDB indisponível para custódia ({e}); modo offline.")
+
     logging.info("Processando documento desestruturado...")
-    
-    # 1. Parsing (Diretriz I)
-    parsed_doc = parse_document(document_text, source_event_id="01JX_CONTRATO_JUNTA_504")
-    
+
+    # 1. Parsing (Diretriz I) — source_event_id é o ULID REAL do log
+    parsed_doc = parse_document(document_text, source_event_id=source_event_id or doc_ref)
+
     # 2 e 3. Investigação e ACT-R (Diretrizes II e III)
     insight = investigator.process_document(parsed_doc)
-    
+
     if insight:
         logging.info(f"ALERTA FRAUDE DETECTADA: {insight['payload']['tipo_fraude']}")
         logging.info(f"Conclusão: {insight['payload']['conclusao_juridica']}")
-        
+
         # 4. Gravação no Banco (Diretriz IV)
         try:
             lsn = client.append_insight(insight)
-            logging.info(f"Insight pericial salvo no HeraclitusDB com sucesso. LSN: {lsn}")
+            insight_id = client.resolve_event_id(lsn)
+            chain = client.provenance(insight_id)
+            logging.info(f"Insight pericial salvo. LSN={lsn} ULID={insight_id}")
+            logging.info(f"Cadeia de custódia (PROVENANCE): {chain}")
         except Exception as e:
             logging.warning(f"Não foi possível persistir no HeraclitusDB via gRPC (Servidor inativo?): {e}")
             logging.info("Payload gerado:")
@@ -60,9 +75,11 @@ def run_agent(file_path: str = None):
     else:
         logging.info("Nenhuma anomalia detectada no documento.")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agente Investigativo LABRA-AGU")
     parser.add_argument("--file", type=str, help="Caminho do arquivo para processamento (PDF, DOCX, TXT, ZIP, MP3, MP4)", default=None)
+    parser.add_argument("--target", type=str, help="Endereço gRPC do HeraclitusDB", default="localhost:7474")
     args = parser.parse_args()
-    
-    run_agent(args.file)
+
+    run_agent(args.file, args.target)

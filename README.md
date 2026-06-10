@@ -64,3 +64,30 @@ python build.py
 python main.py
 ```
 O console exibirá o loop conectando-se ao HeraclitusDB, analisando sub-grafos e disparando sentenças de fraude para o banco quando limites geométricos forem violados.
+
+### Teste de Integração (end-to-end, local)
+
+Com o `heraclitus-server` rodando em `localhost:7474`:
+
+```bash
+# No repositório HeraclitusDB:
+cargo run --release -p heraclitus-server
+
+# Neste repositório:
+python test_integration.py
+```
+
+O teste percorre o ciclo completo da **cadeia de custódia**:
+
+1. O documento-fonte é gravado como evento imutável no log (`Append`);
+2. O LSN é resolvido para o **ULID real** atribuído pelo banco (`Query`);
+3. O motor investigativo detecta a triangulação e gera o insight;
+4. O insight entra no log com `parents = [ULID do documento]`;
+5. `PROVENANCE(insight)` devolve exatamente o documento-fonte;
+6. O insight é consultável por GQL e o payload pericial sobrevive intacto;
+7. `AS OF LSN` prova que o insight é invisível em snapshots do passado.
+
+> **Nota de integridade:** o HeraclitusDB rejeita `parents` que não sejam
+> ULIDs válidos. Referências documentais humanas (números de processo,
+> protocolos de junta) não vão em `parents` — vão em `attrs.source_refs`.
+> A proveniência criptográfica usa sempre os ULIDs reais do log.

@@ -26,8 +26,19 @@ def build_protos():
     
     print(f"Compilando proto: {' '.join(command)}")
     status = protoc.main(command)
-    
+
     if status == 0:
+        # protoc gera `import heraclitus_pb2` absoluto; dentro do pacote
+        # `agent/` o import precisa de ser relativo.
+        grpc_stub = os.path.join(out_dir, "heraclitus_pb2_grpc.py")
+        with open(grpc_stub, "r", encoding="utf-8") as f:
+            src = f.read()
+        src = src.replace(
+            "import heraclitus_pb2 as heraclitus__pb2",
+            "from . import heraclitus_pb2 as heraclitus__pb2",
+        )
+        with open(grpc_stub, "w", encoding="utf-8") as f:
+            f.write(src)
         print("Stubs gRPC gerados com sucesso no diretório 'agent/'.")
     else:
         print("Falha ao compilar os arquivos proto.")
