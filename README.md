@@ -4,126 +4,67 @@
 
 # LABRA-AGU: Agente de IA Pericial e Investigativo
 
-O **Laboratório de Recuperação de Ativos (LABRA)**, vinculado à Advocacia-Geral da União (AGU), tem como missão o rastreamento, asfixia financeira e recuperação de bens e direitos desviados da União (corrupção, fraudes fiscais, lavagem de dinheiro, improbidade). 
+O **Laboratório de Recuperação de Ativos (LABRA)**, vinculado à Advocacia-Geral da União (AGU), tem como missão o rastreamento, asfixia financeira e recuperação de bens e direitos desviados da União (corrupção, fraudes fiscais, lavagem de dinheiro, improbidade).
 
-Este repositório contém a implementação em Python do **Agente de IA Pericial**, projetado especificamente para combater a **blindagem patrimonial** automatizando a análise de dados jurídicos caóticos (juntas comerciais, cartórios, COAF, etc.).
+Este repositório contém a implementação em Python do **Agente de IA Pericial**, projetado para combater a **blindagem patrimonial** automatizando a análise de dados jurídicos caóticos (juntas comerciais, cartórios, COAF, extratos bancários, escutas).
+
+> 📖 **Novo por aqui? Comece pelo [TUTORIAL completo](docs/TUTORIAL.md)** — do zero ao primeiro insight pericial em 10 minutos.
+
+## Arquitetura — sentidos, rio e cérebro
+
+```
+Bancos da AGU (Oracle, MSSQL, Postgres...) ──┐
+Pasta de depósito (PDF, DOCX, MP3, MP4...) ──┤
+                                             ▼
+                                       pipeline.py            ← OS SENTIDOS (ingere, sem opinar)
+                                             │ Append (gRPC :7474)
+                                             ▼
+                                  ┌─────────────────────┐
+                                  │    HeraclitusDB     │     ← O RIO (log imutável, custódia
+                                  │  log append-only    │        criptográfica, proveniência)
+                                  └──────────┬──────────┘
+                          Subscribe │        │ Append (insights)
+                                    ▼        │
+                              main.py --daemon               ← O CÉREBRO (investiga, sem tocar
+                          parser → padrões → ACT-R              nas fontes)
+                                    ▲
+                              directive.py                   ← A PROCURADORIA (ordens são
+                          (DIRETRIZ como evento no log)         eventos auditáveis)
+```
+
+A separação de papéis é estrita: o pipeline **ingere sem opinar**; o agente **investiga sem tocar nas fontes**; a Procuradoria **ordena através do log**. Os três só se falam pelo rio — toda interação é um evento imutável, auditável e com proveniência.
 
 ## O que este Agente faz?
 
-O Agente atua como um sistema investigativo proativo baseado em quatro diretrizes centrais e um motor de ingestão multimodal:
+1. **Ingestão Multimodal (Os Olhos e Ouvidos)**: processa praticamente qualquer prova material — PDFs (processos), DOCX (contratos), CSV/TXT (extratos), ZIP, e transcreve áudios e vídeos (MP3, MP4, WAV) de escutas e depoimentos. Via `pipeline.py`, conecta **qualquer banco de dados** da AGU (qualquer dialeto SQLAlchemy) com sincronização incremental e checkpoints idempotentes.
+2. **Parsing Estruturado (As Mãos)**: extrai entidades normatizadas (CPFs, CNPJs), relações societárias, transações e marcos judiciais de texto desestruturado (`agent/parser.py`; em produção, LLM com JSON mode no mesmo schema Pydantic).
+3. **Investigação Contínua (O Cérebro)**: o daemon vive subscrito ao log e avalia cada documento contra o **catálogo de padrões de fraude** (`agent/patterns.py`).
+4. **Filtro Sub-simbólico ACT-R (O Filtro)**: a fórmula de ativação de memória ACT-R prioriza entidades recorrentes e recentes; **DIRETRIZes da Procuradoria dão boost dirigido** aos alvos de interesse.
+5. **Relatório Pericial com Rastreabilidade**: cada insight carrega narrativa jurídica conclusiva, severidade, ativações ACT-R reais e `parents` apontando para os ULIDs do documento-fonte **e** da diretriz que o influenciou — cadeia de custódia completa, verificável por `PROVENANCE`.
 
-1. **Ingestão Multimodal (Os Olhos e Ouvidos)**: O Agente processa praticamente qualquer tipo de prova material. Ele extrai texto, CPFs, e transações de PDFs (processos), DOCX (contratos), CSV/TXT (extratos), arquivos ZIP, e até transcreve áudios e vídeos (MP3, MP4, WAV) de escutas telefônicas ou depoimentos.
-2. **Parsing Estruturado (As Mãos)**: Recebe documentos não estruturados da ingestão, usa Modelos de Linguagem (LLMs) via `Pydantic` e extrai entidades normatizadas (CPFs, CNPJs, Relações Societárias e Transações).
-3. **Investigação Contínua (O Cérebro)**: Rastreia nexo causal e descobre anomalias complexas (ex: triangulação cíclica de quotas transferidas para offshores administradas por parentes).
-4. **Filtro Sub-simbólico ACT-R (O Filtro)**: Avalia milhares de movimentações e aplica a fórmula de ativação de memória matemática (ACT-R). Eventos altamente conectados aos devedores e temporalmente recentes ganham score alto, evitando que a IA sofra "alucinação" com dados inúteis.
-5. **Relatório Pericial com Rastreabilidade**: Traduz o achado em uma narrativa jurídica conclusiva, listando os documentos que deram origem ao alerta (cadeia de custódia da prova).
+## Início rápido
 
-## Como ele interage com o HeraclitusDB?
-
-A genialidade da arquitetura reside em sua separação de papéis. O Agente é puramente analítico (Python) e roda desacoplado do banco de dados vetorial de topologia geométrica (HeraclitusDB, feito em Rust).
-
-**O fluxo de integração segue 3 etapas via gRPC:**
-
-### 1. Conexão Bidirecional
-O Agente abre uma conexão de alta performance com o **HeraclitusDB** utilizando `grpcio` nativo (na porta `:7474`). Ele utiliza a função `Subscribe(from_lsn)` para ouvir eventos financeiros fluindo dos sistemas da União para o Log Central do banco em tempo real.
-
-### 2. Eventos Imutáveis
-O Agente **jamais altera ou exclui** um registro. Ao constatar uma fraude através de sua motor cognitivo, ele forja um payload JSON estruturado (`INSIGHT_PERICIAL_FRAUDE`) e devolve para o banco via gRPC `AppendRequest()`.
-
-Para manter a causalidade forense, o agente passa no campo `parents` os identificadores geográficos dos eventos-fonte que basearam a descoberta.
-
-### 3. Absorção Geométrica (Magia do HeraclitusDB)
-O HeraclitusDB armazena esse novo `Episódio`. Durante a compactação LSM em background:
-- O banco lê as chaves do Insight.
-- Reposiciona as coordenadas do Devedor, da Empresa Laranja e da Offshore, **aproximando-os radicalmente** nas geometrias hiperbólicas e esféricas contidas na sua `Product Manifold`.
-- Quando o dashboard do **Power BI** da Procuradoria-Geral da União consulta as Visualizações (`Read Views`), a fraude surge como um hub de grafos altamente correlacionado e pronto para pedido judicial de bloqueio patrimonial.
-
----
-
-## Como Rodar o Agente
-
-### Pré-requisitos
-- Python 3.9+
-- HeraclitusDB rodando na porta local `:7474` com protocolo gRPC ativo.
-
-### Instalação
 ```bash
-# Clone e entre no projeto
-git clone https://github.com/JoseRFJuniorLLMs/LABRA-AGU.git
-cd LABRA-AGU
+# 1. HeraclitusDB (o rio) — em github.com/JoseRFJuniorLLMs/HeraclitusDB:
+cargo run --release -p heraclitus-server     # gRPC :7474, REST :7475
 
-# Instale os requerimentos
+# 2. O agente:
+git clone https://github.com/JoseRFJuniorLLMs/LABRA-AGU.git && cd LABRA-AGU
 pip install -r requirements.txt
+python build.py                              # gera os stubs gRPC
 
-# Compile os stubs do gRPC caso não os tenha no SO
-python build.py
-```
-
-### Executando a Investigação
-
-**Modo one-shot** (analisa um documento e termina):
-```bash
-python main.py                      # simulação embutida
-python main.py --file extrato.pdf   # PDF, DOCX, CSV, TXT, ZIP, MP3, MP4
-```
-
-**Modo daemon** (o agente vive subscrito ao log e reage a tudo que entra):
-```bash
+# 3. O cérebro, vivo:
 python main.py --daemon
+
+# 4. Noutro terminal — alimenta o rio e dá ordens:
+python ingest.py --file extrato.pdf --ref "OFICIO_1234/2026"
+python directive.py --alvo CPF_645.254.302-49 --foco "offshores" --boost 8
+python pipeline.py --db "sqlite:///legado.db" --table movs --incremental id --once
 ```
 
-### Como interagir com o agente em execução
+Guia passo a passo, com exemplos de saída, consultas GQL, como criar padrões novos e resolução de problemas: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
 
-Toda interação acontece **através do log** — nunca por canal lateral. A
-tua ordem é, ela própria, um evento imutável e auditável:
-
-```bash
-# Chegou um banco novo? Deposita os documentos no rio; o daemon analisa:
-python ingest.py --file extrato_banco_novo.pdf --ref "OFICIO_1234/2026"
-
-# Queres que ele olhe para algo específico? Envia uma DIRETRIZ:
-python directive.py --alvo CPF_645.254.302-49 \
-    --foco "transferencias para offshores" \
-    --padrao fracionamento --padrao vespera_constricao --boost 8
-```
-
-A DIRETRIZ dá **boost de ativação ACT-R** aos alvos (o agente passa a
-"pensar mais" neles) e pode restringir o catálogo de padrões. Todo insight
-influenciado por uma diretriz carrega o ULID dela em `parents` — fica
-provado *quem mandou investigar o quê, e o que resultou disso*.
-
-### Pipeline de Ingestão Universal (`pipeline.py`) — os bancos da AGU
-
-A AGU tem dezenas de bancos legados. O `pipeline.py` é o conector
-universal que os liga ao rio — **qualquer** banco com dialeto SQLAlchemy
-(Oracle, SQL Server, Postgres, MySQL, SQLite...) e qualquer pasta de
-depósito de ficheiros (PDF, DOCX, CSV, TXT, ZIP, MP3, MP4):
-
-```bash
-# Sincronização incremental de uma tabela (1 lote = 1 documento no log):
-python pipeline.py --db "oracle+oracledb://user:pw@host/svc" \
-    --table movimentacoes --incremental id \
-    --template "{origem} transferiu R$ {valor} para {destino} em {data}"
-
-# Pasta vigiada — PDFs, áudios e vídeos novos entram no rio sozinhos:
-python pipeline.py --watch-dir ./entrada --interval 30
-
-# Passagem única (para agendar em cron):
-python pipeline.py --db ... --table ... --incremental id --once
-```
-
-Garantias: **checkpoints idempotentes** (coluna incremental no SQL,
-SHA-256 por ficheiro — rodar duas vezes não duplica nada), credenciais
-nunca vão para o log (só o dialeto), e o `--template` converte linhas de
-tabela em frases canónicas que o parser do agente entende. A separação de
-papéis é estrita: o pipeline **ingere sem opinar**; o agente daemon
-**investiga sem tocar nas fontes**; os dois só se falam através do log.
-
-Teste e2e: `python test_pipeline.py` (SQLite legado com fracionamento +
-.txt com triangulação → o daemon deteta nas duas fontes e a proveniência
-identifica exatamente tabela/intervalo ou ficheiro/hash).
-
-### Catálogo de Padrões de Fraude (`agent/patterns.py`)
+## Catálogo de Padrões de Fraude (`agent/patterns.py`)
 
 | Padrão | O que deteta | Severidade |
 |---|---|---|
@@ -132,31 +73,30 @@ identifica exatamente tabela/intervalo ou ficheiro/hash).
 | `laranja_familiar` | Plenos poderes outorgados a familiar do devedor (interposta pessoa) | ALTA |
 | `vespera_constricao` | Dissipação patrimonial até 30 dias antes de penhora/citação/bloqueio | CRITICA |
 
-Padrão novo = uma função e uma entrada no catálogo. Nada mais muda.
+Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutorial, secção 8](docs/TUTORIAL.md#8-criando-um-padrão-de-fraude-novo)).
 
-### Teste de Integração (end-to-end, local)
+## Componentes
 
-Com o `heraclitus-server` rodando em `localhost:7474`:
+| Ficheiro | Papel |
+|---|---|
+| `main.py` | One-shot (`--file`) ou daemon (`--daemon`) |
+| `pipeline.py` | Conector universal: qualquer banco SQL + pasta vigiada de ficheiros |
+| `ingest.py` | Depósito manual de um documento no rio |
+| `directive.py` | Envia DIRETRIZ (ordem auditável) ao agente |
+| `agent/parser.py` | Extração de entidades/relações/transações/marcos |
+| `agent/patterns.py` | Catálogo de padrões de fraude |
+| `agent/investigator.py` | Motor de padrões + diretrizes + ACT-R |
+| `agent/act_r.py` | Ativação de memória ACT-R (com boost dirigido) |
+| `agent/daemon.py` | Loop Subscribe com checkpoint e reconexão |
+| `agent/client.py` | SDK gRPC do HeraclitusDB (custódia por ULID) |
+| `dashboard/` | Dashboard React/Vite (timeline, grafo causal, alertas) |
 
-```bash
-# No repositório HeraclitusDB:
-cargo run --release -p heraclitus-server
+## Testes (end-to-end, contra servidor real)
 
-# Neste repositório:
-python test_integration.py
-```
+| Teste | O que prova |
+|---|---|
+| `test_integration.py` | Custódia ponta a ponta: doc → ULID real → insight → `PROVENANCE` → `AS OF` |
+| `test_daemon.py` | Daemon reage sozinho a DIRETRIZ + documento; proveniência composta (doc + diretriz) |
+| `test_pipeline.py` | Banco SQL + ficheiro → rio → deteção nas duas fontes; checkpoints idempotentes |
 
-O teste percorre o ciclo completo da **cadeia de custódia**:
-
-1. O documento-fonte é gravado como evento imutável no log (`Append`);
-2. O LSN é resolvido para o **ULID real** atribuído pelo banco (`Query`);
-3. O motor investigativo detecta a triangulação e gera o insight;
-4. O insight entra no log com `parents = [ULID do documento]`;
-5. `PROVENANCE(insight)` devolve exatamente o documento-fonte;
-6. O insight é consultável por GQL e o payload pericial sobrevive intacto;
-7. `AS OF LSN` prova que o insight é invisível em snapshots do passado.
-
-> **Nota de integridade:** o HeraclitusDB rejeita `parents` que não sejam
-> ULIDs válidos. Referências documentais humanas (números de processo,
-> protocolos de junta) não vão em `parents` — vão em `attrs.source_refs`.
-> A proveniência criptográfica usa sempre os ULIDs reais do log.
+> **Nota de integridade:** o HeraclitusDB rejeita `parents` que não sejam ULIDs válidos. Referências documentais humanas (números de processo, protocolos) vão em `attrs.source_refs` / `attrs.doc_ref`; a proveniência criptográfica usa sempre os ULIDs reais do log.
