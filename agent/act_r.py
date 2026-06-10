@@ -10,10 +10,21 @@ class ACTREngine:
     def record_access(self, entity_id: str, timestamp: float = None):
         if timestamp is None:
             timestamp = time.time()
-            
+
         if entity_id not in self.memory_activations:
             self.memory_activations[entity_id] = []
         self.memory_activations[entity_id].append(timestamp)
+
+    def boost(self, entity_id: str, weight: int = 5):
+        """
+        Reforço dirigido: uma DIRETRIZ da Procuradoria injeta `weight`
+        acessos sintéticos na memória do alvo, elevando sua base-level
+        activation — o agente passa a "pensar mais" nessa entidade sem
+        alterar a fórmula ACT-R.
+        """
+        now = time.time()
+        for _ in range(max(1, weight)):
+            self.record_access(entity_id, now)
         
     def calculate_activation(self, entity_id: str, current_time: float = None) -> float:
         """

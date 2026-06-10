@@ -54,32 +54,52 @@ def run_agent(file_path: str = None, target: str = "localhost:7474"):
     # 1. Parsing (Diretriz I) — source_event_id é o ULID REAL do log
     parsed_doc = parse_document(document_text, source_event_id=source_event_id or doc_ref)
 
-    # 2 e 3. Investigação e ACT-R (Diretrizes II e III)
-    insight = investigator.process_document(parsed_doc)
+    # 2 e 3. Investigação e ACT-R (Diretrizes II e III) — catálogo completo
+    insights = investigator.process_document(parsed_doc)
 
-    if insight:
-        logging.info(f"ALERTA FRAUDE DETECTADA: {insight['payload']['tipo_fraude']}")
-        logging.info(f"Conclusão: {insight['payload']['conclusao_juridica']}")
+    if insights:
+        for insight in insights:
+            logging.info(
+                f"ALERTA [{insight['payload']['severidade']}]: "
+                f"{insight['payload']['tipo_fraude']}"
+            )
+            logging.info(f"Conclusão: {insight['payload']['conclusao_juridica']}")
 
-        # 4. Gravação no Banco (Diretriz IV)
-        try:
-            lsn = client.append_insight(insight)
-            insight_id = client.resolve_event_id(lsn)
-            chain = client.provenance(insight_id)
-            logging.info(f"Insight pericial salvo. LSN={lsn} ULID={insight_id}")
-            logging.info(f"Cadeia de custódia (PROVENANCE): {chain}")
-        except Exception as e:
-            logging.warning(f"Não foi possível persistir no HeraclitusDB via gRPC (Servidor inativo?): {e}")
-            logging.info("Payload gerado:")
-            print(json.dumps(insight, indent=2, ensure_ascii=False))
+            # 4. Gravação no Banco (Diretriz IV)
+            try:
+                lsn = client.append_insight(insight)
+                insight_id = client.resolve_event_id(lsn)
+                chain = client.provenance(insight_id)
+                logging.info(f"Insight pericial salvo. LSN={lsn} ULID={insight_id}")
+                logging.info(f"Cadeia de custódia (PROVENANCE): {chain}")
+            except Exception as e:
+                logging.warning(f"Não foi possível persistir no HeraclitusDB via gRPC (Servidor inativo?): {e}")
+                logging.info("Payload gerado:")
+                print(json.dumps(insight, indent=2, ensure_ascii=False))
     else:
         logging.info("Nenhuma anomalia detectada no documento.")
 
 
+def run_daemon(target: str):
+    """Modo contínuo: o agente vive subscrito ao log. Interação via
+    `py directive.py` (ordens) e `py ingest.py` (documentos)."""
+    from agent.daemon import AgentDaemon
+
+    daemon = AgentDaemon(target)
+    try:
+        daemon.run()
+    except KeyboardInterrupt:
+        daemon.stop()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agente Investigativo LABRA-AGU")
-    parser.add_argument("--file", type=str, help="Caminho do arquivo para processamento (PDF, DOCX, TXT, ZIP, MP3, MP4)", default=None)
+    parser.add_argument("--file", type=str, help="Caminho do arquivo para processamento one-shot (PDF, DOCX, TXT, ZIP, MP3, MP4)", default=None)
+    parser.add_argument("--daemon", action="store_true", help="Modo contínuo: subscreve o log e reage a documentos e DIRETRIZes")
     parser.add_argument("--target", type=str, help="Endereço gRPC do HeraclitusDB", default="localhost:7474")
     args = parser.parse_args()
 
-    run_agent(args.file, args.target)
+    if args.daemon:
+        run_daemon(args.target)
+    else:
+        run_agent(args.file, args.target)

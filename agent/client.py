@@ -87,3 +87,21 @@ class HeraclitusClient:
     def provenance(self, event_id: str):
         """Cadeia de custódia inversa: de onde veio este insight?"""
         return self.query(f'PROVENANCE ("{event_id}")')
+
+    def append_directive(self, alvos, foco: str = "", padroes=None, boost: int = 5,
+                         autor: str = "procuradoria") -> int:
+        """
+        Interação com o agente daemon: a ordem é ela própria um evento
+        imutável (kind=DIRETRIZ). Fica registado quem ordenou o quê e
+        quando — e os insights influenciados apontarão para este ULID.
+        """
+        body = {"alvos": list(alvos or []), "foco": foco,
+                "padroes": list(padroes or []), "boost": boost}
+        req = heraclitus_pb2.AppendRequest(
+            agent_id=autor,
+            session_id="labra_session_01",
+            kind="DIRETRIZ",
+            content=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            attrs={"generated_by": "labra_directive_cli"},
+        )
+        return self.stub.Append(req).lsn

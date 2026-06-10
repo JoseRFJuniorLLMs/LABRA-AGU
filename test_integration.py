@@ -59,7 +59,7 @@ def main() -> int:
 
     # 3. Investigação com o ULID real como fonte
     parsed = parse_document(DOC, source_event_id=source_id)
-    insight = Investigator().process_document(parsed)
+    insight = Investigator().process_document_single(parsed)
     assert insight is not None, "o padrão de triangulação devia ser detectado"
     assert insight["parents"] == [source_id], "parents deve ser o ULID da fonte"
     step(3, f"fraude detectada: {insight['payload']['tipo_fraude']}")

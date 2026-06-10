@@ -60,10 +60,48 @@ python build.py
 ```
 
 ### Executando a Investigação
+
+**Modo one-shot** (analisa um documento e termina):
 ```bash
-python main.py
+python main.py                      # simulação embutida
+python main.py --file extrato.pdf   # PDF, DOCX, CSV, TXT, ZIP, MP3, MP4
 ```
-O console exibirá o loop conectando-se ao HeraclitusDB, analisando sub-grafos e disparando sentenças de fraude para o banco quando limites geométricos forem violados.
+
+**Modo daemon** (o agente vive subscrito ao log e reage a tudo que entra):
+```bash
+python main.py --daemon
+```
+
+### Como interagir com o agente em execução
+
+Toda interação acontece **através do log** — nunca por canal lateral. A
+tua ordem é, ela própria, um evento imutável e auditável:
+
+```bash
+# Chegou um banco novo? Deposita os documentos no rio; o daemon analisa:
+python ingest.py --file extrato_banco_novo.pdf --ref "OFICIO_1234/2026"
+
+# Queres que ele olhe para algo específico? Envia uma DIRETRIZ:
+python directive.py --alvo CPF_645.254.302-49 \
+    --foco "transferencias para offshores" \
+    --padrao fracionamento --padrao vespera_constricao --boost 8
+```
+
+A DIRETRIZ dá **boost de ativação ACT-R** aos alvos (o agente passa a
+"pensar mais" neles) e pode restringir o catálogo de padrões. Todo insight
+influenciado por uma diretriz carrega o ULID dela em `parents` — fica
+provado *quem mandou investigar o quê, e o que resultou disso*.
+
+### Catálogo de Padrões de Fraude (`agent/patterns.py`)
+
+| Padrão | O que deteta | Severidade |
+|---|---|---|
+| `triangulacao_offshore` | Quotas vendidas a entidade que nomeia procurador com plenos poderes | ALTA (CRITICA se familiar) |
+| `fracionamento` | ≥3 transferências abaixo do limiar COAF somando valor relevante (smurfing) | ALTA |
+| `laranja_familiar` | Plenos poderes outorgados a familiar do devedor (interposta pessoa) | ALTA |
+| `vespera_constricao` | Dissipação patrimonial até 30 dias antes de penhora/citação/bloqueio | CRITICA |
+
+Padrão novo = uma função e uma entrada no catálogo. Nada mais muda.
 
 ### Teste de Integração (end-to-end, local)
 
