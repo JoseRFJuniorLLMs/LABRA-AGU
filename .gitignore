@@ -5,3 +5,7 @@ dashboard/dist/
 .venv/
 *.log
 agent_state*.json
+agent_deadletter*.jsonl
+pipeline_state.json
+labra_srv_*
+.pytest_cache/

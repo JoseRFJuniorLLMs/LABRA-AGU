@@ -1,25 +1,23 @@
 """
-Teste e2e do modo daemon (requer heraclitus-server em localhost:7474).
+Teste e2e do modo daemon contra um servidor FRESCO (isolado).
 
-Fluxo testado — interação 100% através do log:
-  1. Daemon arranca subscrito ao rio (thread);
-  2. Procuradoria envia DIRETRIZ (alvo = devedor, boost ACT-R);
-  3. Ingestor deposita um documento COAF com DOIS padrões de fraude
+Fluxo testado — interação 100% através do log, com o daemon event-sourced
+(reconstrói do LSN 0, reconcilia, vive):
+  1. Procuradoria envia DIRETRIZ (alvo = devedor, boost ACT-R);
+  2. Ingestor deposita um documento COAF com DOIS padrões de fraude
      (triangulação offshore + fracionamento/smurfing);
-  4. O daemon deteta os dois e grava insights com proveniência composta:
-     parents = [ULID do documento, ULID da diretriz];
-  5. Verificações: PROVENANCE, ativações ACT-R reais, severidades.
+  3. O daemon (thread) reconstrói, reconcilia e emite ao vivo;
+  4. Verificações: insights emitidos, proveniência composta (doc+diretriz),
+     ativações ACT-R refletindo o boost, severidades.
 """
 import json
 import sys
 import threading
 import time
-import uuid
 
-from agent.client import HeraclitusClient, is_ulid
+from agent.client import HeraclitusClient
 from agent.daemon import AgentDaemon
-
-TARGET = "localhost:7474"
+from agent.testing import server_bin, temp_server
 
 DOC = """
 Relatório COAF / Junta Comercial:
@@ -37,75 +35,72 @@ def step(n, msg):
 
 
 def main() -> int:
-    client = HeraclitusClient(TARGET)
-    try:
-        head = client.snapshot()
-    except Exception as e:
-        print(f"FALHA: HeraclitusDB não acessível em {TARGET}: {e}")
-        return 1
-    step(0, f"conectado (head={head})")
+    if not server_bin():
+        print("SKIP: heraclitus-server não encontrado (defina HERACLITUS_SERVER_BIN)")
+        return 0
 
-    # 1. Daemon vivo (checkpoint isolado por execução do teste)
-    state = f"agent_state_test_{uuid.uuid4().hex[:8]}.json"
-    daemon = AgentDaemon(TARGET, state_path=state)
-    daemon._save_checkpoint(head - 1 if head > 0 else -1)  # começa do head atual
-    t = threading.Thread(target=daemon.run, daemon=True)
-    t.start()
-    time.sleep(1.0)
-    step(1, "daemon subscrito ao log")
+    with temp_server() as target:
+        client = HeraclitusClient(target)
+        step(0, f"servidor fresco em {target}")
 
-    # 2. DIRETRIZ via log
-    d_lsn = client.append_directive(
-        alvos=["CPF_645.254.302-49"],
-        foco="blindagem patrimonial e fracionamento",
-        boost=8,
-    )
-    directive_id = client.resolve_event_id(d_lsn)
-    assert is_ulid(directive_id)
-    step(2, f"DIRETRIZ enviada (ULID={directive_id})")
+        # 1. DIRETRIZ e documento entram no rio ANTES do daemon — o daemon
+        #    reconstrói e reconcilia, provando o caminho event-sourcing.
+        d_lsn = client.append_directive(
+            alvos=["CPF_645.254.302-49"], foco="blindagem", boost=8)
+        directive_id = client.resolve_event_id(d_lsn)
+        step(1, f"DIRETRIZ no log (ULID={directive_id})")
 
-    # 3. Documento via ingestão
-    doc_lsn = client.append_document("ingestor_labra", DOC, attrs={"doc_ref": "COAF_TESTE_DAEMON"})
-    doc_id = client.resolve_event_id(doc_lsn)
-    step(3, f"documento ingerido (ULID={doc_id})")
+        doc_lsn = client.append_document("ingestor_labra", DOC,
+                                         attrs={"doc_ref": "COAF_TESTE"})
+        doc_id = client.resolve_event_id(doc_lsn)
+        step(2, f"documento no log (ULID={doc_id})")
 
-    # 4. Espera ativa pelos insights do daemon
-    deadline = time.time() + 15
-    insights = []
-    while time.time() < deadline:
-        rows = client.query(
-            'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n ORDER BY n.lsn DESC'
-        )
-        insights = [
-            r for r in rows
-            if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "") and r["lsn"] > doc_lsn
-        ]
-        if len(insights) >= 2:
-            break
-        time.sleep(0.5)
-    assert len(insights) >= 2, f"esperava >=2 insights do daemon, veio {len(insights)}"
-    padroes = set()
-    for r in insights:
-        payload = json.loads(r["content"])
-        padroes.add(payload["tipo_fraude"])
-        # Proveniência composta: documento + diretriz
-        chain = client.provenance(r["id"])
-        assert doc_id in chain, f"insight {r['id']} sem o documento na proveniência: {chain}"
-        assert directive_id in chain, f"insight {r['id']} sem a diretriz na proveniência: {chain}"
-        # ACT-R real: ativação do devedor deve refletir o boost da diretriz
-        act = payload["ativacao_act_r"].get("CPF_645.254.302-49")
-        assert act is not None and act > 0.0, f"ativação ACT-R inesperada: {act}"
-        assert payload["diretrizes_aplicadas"] == [directive_id]
-    assert {"triangulacao_offshore", "fracionamento"} <= padroes, padroes
-    step(4, f"daemon emitiu {len(insights)} insights: {sorted(padroes)}")
-    step(5, "proveniência composta confirmada (documento + diretriz) em todos")
+        # 2. Daemon vivo (thread). Reconstrói do 0, reconcilia (emite), vive.
+        daemon = AgentDaemon(target)
+        t = threading.Thread(target=daemon.run, daemon=True)
+        t.start()
+        step(3, "daemon subscrito (reconstruindo + reconciliando)")
 
-    daemon.stop()
-    t.join(timeout=5)
-    step(6, f"daemon parado limpo ({daemon.processed} eventos, {daemon.insights_emitted} insights)")
+        # 3. Espera ativa pelos insights
+        deadline = time.time() + 20
+        insights = []
+        while time.time() < deadline:
+            rows = client.query(
+                'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n ORDER BY n.lsn DESC')
+            insights = [r for r in rows if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")]
+            if len(insights) >= 2:
+                break
+            time.sleep(0.5)
+        assert len(insights) >= 2, f"esperava >=2 insights, veio {len(insights)}"
 
-    print("\nDAEMON LABRA-AGU <-> HeraclitusDB: SUCESSO TOTAL")
-    return 0
+        padroes = set()
+        for r in insights:
+            payload = json.loads(r["content"])
+            padroes.add(payload["tipo_fraude"])
+            chain = client.provenance(r["id"])
+            assert doc_id in chain, f"{r['id']} sem documento na proveniência: {chain}"
+            assert directive_id in chain, f"{r['id']} sem diretriz na proveniência: {chain}"
+            assert payload["diretrizes_aplicadas"] == [directive_id]
+            act = payload["ativacao_act_r"].get("CPF:64525430249")
+            assert act is not None and act > 0.0, f"ativação ACT-R inesperada: {act}"
+        assert {"triangulacao_offshore", "fracionamento"} <= padroes, padroes
+        step(4, f"daemon emitiu {len(insights)} insights: {sorted(padroes)}")
+        step(5, "proveniência composta (documento + diretriz) confirmada")
+
+        # 4. Idempotência: um SEGUNDO daemon no mesmo log não duplica nada.
+        before = len(insights)
+        d2 = AgentDaemon(target)
+        d2._rebuild_state()
+        d2._reconcile()
+        rows = client.query('MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
+        after = len([r for r in rows if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")])
+        assert after == before, f"re-arranque duplicou insights ({before} -> {after})"
+        step(6, f"idempotência: re-arranque não duplica ({after} insights)")
+
+        daemon.stop()
+        t.join(timeout=5)
+        print("\nDAEMON LABRA-AGU <-> HeraclitusDB: SUCESSO TOTAL")
+        return 0
 
 
 if __name__ == "__main__":

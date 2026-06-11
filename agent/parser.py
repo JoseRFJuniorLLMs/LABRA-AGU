@@ -79,8 +79,12 @@ _VENDA_RE = re.compile(
     rf"({_ID})[^;]*?(?:transferiu|vendeu|cedeu)\s+(?:as\s+)?quotas.*?({_ID})",
     re.IGNORECASE | re.DOTALL,
 )
+# "que" é opcional: a nomeação pode vir no mesmo período ("..., que nomeou...")
+# ou num documento separado ("A CNPJ_X nomeou CPF_Y ... poderes"). O outorgante
+# é o id IMEDIATAMENTE antes de "nomeou/constituiu" (sem outro CPF/CNPJ no meio),
+# senão o CPF do devedor seria capturado em vez da offshore.
 _PROC_RE = re.compile(
-    rf"({_ID})\s*,?\s*que.*?(?:nomeou|constituiu)(.*?)({_ID})(.*?poderes)",
+    rf"({_ID})(?:(?!CPF|CNPJ).)*?(?:nomeou|constituiu)(.*?)({_ID})(.*?poderes)",
     re.IGNORECASE | re.DOTALL,
 )
 _TX_RE = re.compile(

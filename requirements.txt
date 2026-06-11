@@ -1,10 +1,21 @@
+# Núcleo (obrigatório)
 grpcio==1.62.1
 grpcio-tools==1.62.1
 pydantic==2.6.4
 numpy==1.26.4
+
+# Ingestão multimodal (opcional — instale conforme o formato dos documentos)
 pdfplumber
 python-docx
 moviepy
 SpeechRecognition
 pydub
+
+# Pipeline universal de bancos (opcional — + driver do seu banco)
 SQLAlchemy
+
+# Parser por LLM (opcional — requer ANTHROPIC_API_KEY; fallback determinístico)
+anthropic
+
+# Testes
+pytest
