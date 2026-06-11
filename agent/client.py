@@ -1,5 +1,7 @@
+import datetime
 import json
 import re
+
 import grpc
 
 try:
@@ -18,8 +20,25 @@ def is_ulid(value: str) -> bool:
 
 
 class HeraclitusClient:
-    def __init__(self, target='localhost:7474'):
-        self.channel = grpc.insecure_channel(target)
+    def __init__(self, target="localhost:7474", tls: bool = False,
+                 ca_cert: str | None = None):
+        """
+        Conexão gRPC ao HeraclitusDB.
+
+        Produção (AGU/INSS): use TLS. `tls=True` abre um canal seguro; se
+        `ca_cert` for dado, valida o servidor contra essa CA (cert PEM).
+        Sem TLS, o canal é inseguro — aceitável apenas em desenvolvimento
+        local, pois trafega CPF e dados financeiros sensíveis (LGPD).
+        """
+        if tls:
+            creds_kwargs = {}
+            if ca_cert:
+                with open(ca_cert, "rb") as f:
+                    creds_kwargs["root_certificates"] = f.read()
+            creds = grpc.ssl_channel_credentials(**creds_kwargs)
+            self.channel = grpc.secure_channel(target, creds)
+        else:
+            self.channel = grpc.insecure_channel(target)
         try:
             self.stub = heraclitus_pb2_grpc.HeraclitusStub(self.channel)
         except NameError:
@@ -36,6 +55,37 @@ class HeraclitusClient:
         """Executa GQL (MATCH/RECALL/NEAREST/PROVENANCE/EXPLAIN/AS OF)."""
         resp = self.stub.Query(heraclitus_pb2.QueryRequest(gql=gql))
         return json.loads(resp.json)
+
+    def query_auditada(self, gql: str, autor: str, motivo: str = ""):
+        """
+        Consulta com trilha de auditoria LGPD: a LEITURA de dados pessoais
+        é, ela própria, um evento imutável no log (kind=ACESSO_LEITURA),
+        registando QUEM consultou O QUÊ e POR QUÊ. A filosofia do projeto
+        — a verdade não se edita — aplicada também ao acesso.
+        """
+        self.stub.Append(heraclitus_pb2.AppendRequest(
+            agent_id=autor,
+            session_id="labra_session_01",
+            kind="ACESSO_LEITURA",
+            content=json.dumps(
+                {"gql": gql, "motivo": motivo,
+                 "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+                ensure_ascii=False).encode("utf-8"),
+            attrs={"generated_by": "labra_audit", "autor": autor},
+        ))
+        return self.query(gql)
+
+    def iter_log(self, from_lsn: int = 0):
+        """
+        Itera os eventos do log a partir de `from_lsn`, em ordem de LSN.
+        Usado pelo daemon para reconstruir o grafo (materialized view).
+        Devolve tuplos (lsn, episode_dict).
+        """
+        rows = self.query("MATCH (n) RETURN n ORDER BY n.lsn")
+        for r in rows:
+            lsn = r.get("lsn", 0)
+            if lsn >= from_lsn:
+                yield lsn, r
 
     def append_document(self, agent_id: str, text: str, attrs: dict | None = None) -> int:
         """
@@ -78,7 +128,7 @@ class HeraclitusClient:
             agent_id=insight["agent_id"],
             session_id="labra_session_01",
             kind=insight["event_type"],
-            content=json.dumps(insight["payload"]).encode("utf-8"),
+            content=json.dumps(insight["payload"], ensure_ascii=False).encode("utf-8"),
             parents=parents,
             attrs=attrs,
         )

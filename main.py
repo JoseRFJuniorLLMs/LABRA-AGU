@@ -9,16 +9,21 @@ from agent.reader import extract_text_from_file
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 
-def run_agent(file_path: str = None, target: str = "localhost:7474"):
+def run_agent(file_path: str = None, target: str = "localhost:7474",
+              tls: bool = False, use_llm: bool = False):
     logging.info("Iniciando Agente Pericial e Investigativo (LABRA-AGU)")
 
     try:
-        client = HeraclitusClient(target)
+        client = HeraclitusClient(target, tls=tls)
     except Exception as e:
         logging.error(f"Erro ao inicializar gRPC client: {e}")
         return
 
     investigator = Investigator()
+    if use_llm:
+        from agent.llm_parser import parse_document_llm as _parse
+    else:
+        _parse = parse_document
 
     if file_path:
         logging.info(f"Extraindo texto do arquivo: {file_path}")
@@ -52,7 +57,7 @@ def run_agent(file_path: str = None, target: str = "localhost:7474"):
     logging.info("Processando documento desestruturado...")
 
     # 1. Parsing (Diretriz I) — source_event_id é o ULID REAL do log
-    parsed_doc = parse_document(document_text, source_event_id=source_event_id or doc_ref)
+    parsed_doc = _parse(document_text, source_event_id=source_event_id or doc_ref)
 
     # 2 e 3. Investigação e ACT-R (Diretrizes II e III) — catálogo completo
     insights = investigator.process_document(parsed_doc)
@@ -80,12 +85,13 @@ def run_agent(file_path: str = None, target: str = "localhost:7474"):
         logging.info("Nenhuma anomalia detectada no documento.")
 
 
-def run_daemon(target: str):
+def run_daemon(target: str, tls: bool = False, use_llm: bool = False):
     """Modo contínuo: o agente vive subscrito ao log. Interação via
     `py directive.py` (ordens) e `py ingest.py` (documentos)."""
     from agent.daemon import AgentDaemon
 
-    daemon = AgentDaemon(target)
+    daemon = AgentDaemon(target, client=HeraclitusClient(target, tls=tls),
+                         use_llm=use_llm)
     try:
         daemon.run()
     except KeyboardInterrupt:
@@ -97,9 +103,11 @@ if __name__ == "__main__":
     parser.add_argument("--file", type=str, help="Caminho do arquivo para processamento one-shot (PDF, DOCX, TXT, ZIP, MP3, MP4)", default=None)
     parser.add_argument("--daemon", action="store_true", help="Modo contínuo: subscreve o log e reage a documentos e DIRETRIZes")
     parser.add_argument("--target", type=str, help="Endereço gRPC do HeraclitusDB", default="localhost:7474")
+    parser.add_argument("--tls", action="store_true", help="Conexão gRPC com TLS (produção)")
+    parser.add_argument("--llm", action="store_true", help="Usar parser por LLM (requer ANTHROPIC_API_KEY); fallback determinístico")
     args = parser.parse_args()
 
     if args.daemon:
-        run_daemon(args.target)
+        run_daemon(args.target, tls=args.tls, use_llm=args.llm)
     else:
-        run_agent(args.file, args.target)
+        run_agent(args.file, args.target, tls=args.tls, use_llm=args.llm)
