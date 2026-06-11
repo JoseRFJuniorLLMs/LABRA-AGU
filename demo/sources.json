@@ -1,0 +1,27 @@
+[
+  {
+    "type": "sql",
+    "db": "sqlite:///demo/demo_data/junta.db",
+    "table": "alteracoes",
+    "incremental": "id",
+    "template": "{socio} transferiu quotas da empresa para a offshore {destino} em {data}"
+  },
+  {
+    "type": "sql",
+    "db": "sqlite:///demo/demo_data/cartorio.db",
+    "table": "procuracoes",
+    "incremental": "id",
+    "template": "A {outorgante} nomeou {procurador} com plenos poderes em {data}"
+  },
+  {
+    "type": "sql",
+    "db": "sqlite:///demo/demo_data/coaf.db",
+    "table": "movimentacoes",
+    "incremental": "id",
+    "template": "{origem} transferiu R$ {valor} para {destino} em {data}"
+  },
+  {
+    "type": "files",
+    "watch_dir": "demo/demo_data/entrada"
+  }
+]

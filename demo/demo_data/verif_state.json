@@ -1,0 +1,12 @@
+{
+  "sql": {
+    "sqlite:///D:/DEV/LABRA-AGU/demo/demo_data/junta.db::alteracoes": 3,
+    "sqlite:///D:/DEV/LABRA-AGU/demo/demo_data/cartorio.db::procuracoes": 3,
+    "sqlite:///D:/DEV/LABRA-AGU/demo/demo_data/coaf.db::movimentacoes": 9
+  },
+  "files": {
+    "3e3524a751643d60e15ced18c4a1a3b88ba715b4e4fc697a23bc8e02135219ff": "vinculos.txt",
+    "1c4b9d2deb1d66fa69e13fac8d487993b23a7ac196ac8da779b3e76ef6c702fb": "vinculos_1305.txt",
+    "1e82996bb1aee6c93b59fb914f8adc1500ddfe73fa5b75ca27caf5cb5ed499e2": "vinculos_9308.txt"
+  }
+}
