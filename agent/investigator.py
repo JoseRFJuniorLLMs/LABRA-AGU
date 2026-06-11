@@ -24,6 +24,13 @@ from .parser import ParsedDocument
 from .patterns import PATTERNS
 
 
+def signature(pattern: str, envolvidos, severidade: str):
+    """Assinatura de dedup. Inclui a SEVERIDADE: uma elevação por nova prova
+    (ex.: vínculo familiar a tornar uma triangulação CRÍTICA) é um achado
+    novo e legítimo, não uma repetição — o último supersede o anterior."""
+    return (pattern, frozenset(envolvidos), severidade)
+
+
 class Directive:
     """Uma ordem da Procuradoria, materializada de um evento DIRETRIZ."""
 
@@ -85,9 +92,10 @@ class Investigator:
         insights: List[dict] = []
         for name in self._active_patterns():
             for achado in PATTERNS[name](self.graph):
-                sig = (achado["pattern"], frozenset(achado["envolvidos"]))
+                sig = signature(achado["pattern"], achado["envolvidos"],
+                                achado["severidade"])
                 if sig in self._emitted:
-                    continue  # já alertado — não repetir
+                    continue  # já alertado nesta severidade — não repetir
                 self._emitted.add(sig)
                 insights.append(self._build_insight(achado))
         return insights

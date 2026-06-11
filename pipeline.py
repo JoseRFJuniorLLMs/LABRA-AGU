@@ -175,10 +175,52 @@ def _file_digest(path: str) -> str:
     return h.hexdigest()
 
 
+# ── multi-fonte: vários bancos + várias pastas, um só processo ─────────
+def run_sources(client, sources: list, interval: int, once: bool) -> int:
+    """
+    Sincroniza TODAS as fontes (bancos e pastas) em cada ciclo. A AGU tem
+    dezenas de bancos — este é o caminho para ingerir de todos ao mesmo
+    tempo, num único processo. Cada fonte tem o seu próprio checkpoint no
+    state partilhado (SQL por (url,tabela); ficheiros por SHA-256), logo
+    nunca há duplicação nem interferência entre fontes.
+
+    Cada fonte é um dict:
+      {"type":"sql","db":"<url>","table":"...","incremental":"id",
+       "template":"{origem} transferiu R$ {valor} para {destino} em {data}"}
+      {"type":"files","watch_dir":"./entrada"}
+    """
+    state = load_state()
+    last_total = 0
+    while True:
+        total = 0
+        for s in sources:
+            try:
+                if s.get("type") == "sql":
+                    total += sync_sql(
+                        client, state, s["db"], s["table"],
+                        s.get("incremental", "id"), s.get("template"))
+                elif s.get("type") == "files":
+                    total += sync_files(client, state, s["watch_dir"])
+                else:
+                    logging.warning(f"fonte ignorada (type desconhecido): {s}")
+            except Exception as e:  # noqa: BLE001 — um banco em falha não para os outros
+                logging.warning(f"falha na fonte {s.get('type')} "
+                                f"{s.get('db', s.get('watch_dir', ''))}: {e}")
+        last_total = total
+        if once:
+            logging.info(f"Passagem única concluída ({total} itens em "
+                         f"{len(sources)} fontes).")
+            return total
+        time.sleep(interval)
+    return last_total
+
+
 # ── loop principal ────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description="Pipeline de Ingestão Universal LABRA")
-    ap.add_argument("--db", type=str, default=None, help="URL SQLAlchemy do banco-fonte")
+    ap.add_argument("--config", type=str, default=None,
+                    help="JSON com lista de fontes (vários bancos + pastas). Ver sources.example.json")
+    ap.add_argument("--db", type=str, default=None, help="URL SQLAlchemy do banco-fonte (fonte única)")
     ap.add_argument("--table", type=str, default=None)
     ap.add_argument("--incremental", type=str, default="id",
                     help="Coluna incremental (id, rowversion, updated_at)")
@@ -187,29 +229,34 @@ def main():
     ap.add_argument("--watch-dir", type=str, default=None, help="Pasta de depósito de ficheiros")
     ap.add_argument("--interval", type=int, default=30, help="Segundos entre ciclos")
     ap.add_argument("--once", action="store_true", help="Uma passagem e sai (cron)")
+    ap.add_argument("--tls", action="store_true")
     ap.add_argument("--target", type=str, default="localhost:7474")
     args = ap.parse_args()
 
-    if not args.db and not args.watch_dir:
-        ap.error("forneça --db (com --table) e/ou --watch-dir")
-    if args.db and not args.table:
-        ap.error("--db exige --table")
-
-    client = HeraclitusClient(args.target)
-    state = load_state()
-    logging.info("Pipeline de ingestão ativo. O agente daemon analisará o que entrar no rio.")
-
-    while True:
-        total = 0
+    # Monta a lista de fontes: do --config (multi) ou dos flags (fonte única).
+    if args.config:
+        with open(args.config, "r", encoding="utf-8") as f:
+            sources = json.load(f)
+        if not isinstance(sources, list):
+            ap.error("--config deve conter uma LISTA de fontes")
+    else:
+        if not args.db and not args.watch_dir:
+            ap.error("forneça --config, ou --db (com --table) e/ou --watch-dir")
+        if args.db and not args.table:
+            ap.error("--db exige --table")
+        sources = []
         if args.db:
-            total += sync_sql(client, state, args.db, args.table,
-                              args.incremental, args.template)
+            sources.append({"type": "sql", "db": args.db, "table": args.table,
+                            "incremental": args.incremental, "template": args.template})
         if args.watch_dir:
-            total += sync_files(client, state, args.watch_dir)
-        if args.once:
-            logging.info(f"Passagem única concluída ({total} itens).")
-            break
-        time.sleep(args.interval)
+            sources.append({"type": "files", "watch_dir": args.watch_dir})
+
+    client = HeraclitusClient(args.target, tls=args.tls)
+    n_sql = sum(1 for s in sources if s.get("type") == "sql")
+    n_files = sum(1 for s in sources if s.get("type") == "files")
+    logging.info(f"Pipeline ativo: {n_sql} banco(s) + {n_files} pasta(s) "
+                 "alimentando o rio em simultâneo. O daemon correlaciona tudo.")
+    run_sources(client, sources, args.interval, args.once)
 
 
 if __name__ == "__main__":

@@ -12,9 +12,21 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-# Tokens de identificação usados nos documentos da União (formato livre dos
-# sistemas de origem: CPF_xxx / CNPJ_xxx, com pontuação ou apelidos).
-_ID_RE = re.compile(r"\b(?:CPF|CNPJ)[_A-Za-z0-9.\-/]*", re.IGNORECASE)
+from .entities import normalize_id
+
+# Identificadores reconhecidos. Os bancos da AGU guardam CPF/CNPJ como
+# NÚMEROS (crus ou formatados), não como tokens "CPF_xxx"; documentos de
+# protótipo usam o prefixo. Reconhecemos os dois mundos:
+#   - tokens prefixados:  CPF_xxx / CNPJ_xxx (apelidos, protótipo)
+#   - CPF formatado:      529.982.247-25
+#   - CNPJ formatado:     11.222.333/0001-81
+#   - números crus:       52998224725 (11) / 11222333000181 (14)
+# A canonicalização e validação de dígitos ficam em entities.normalize_id.
+_ID = (r"(?:(?:CPF|CNPJ)[A-Za-z0-9_.\-/]*"
+       r"|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}"
+       r"|\d{3}\.\d{3}\.\d{3}-\d{2}"
+       r"|\d{14}|\d{11})")
+_ID_RE = re.compile(_ID, re.IGNORECASE)
 _VALUE_RE = re.compile(r"R\$\s?([\d.]+,\d{2})")
 _DATE_RE = re.compile(r"\b(\d{2}/\d{2}/\d{4})\b")
 
@@ -69,22 +81,22 @@ def _to_float(br_value: str) -> float:
 
 
 def _entity_type(token: str) -> str:
-    return "PESSOA_FISICA" if token.upper().startswith("CPF") else "PESSOA_JURIDICA"
+    # Decide pelo id canónico (reconhece CPF prefixado, formatado ou cru).
+    return "PESSOA_FISICA" if normalize_id(token).upper().startswith("CPF") else "PESSOA_JURIDICA"
 
 
 # Regexes dirigidas sobre o texto inteiro (frases partidas por \n ou por
 # pontos dentro de CPFs tornam o split por sentenças inviável).
-_ID = r"(?:CPF|CNPJ)[A-Za-z0-9_.\-/]*"
 _VENDA_RE = re.compile(
     rf"({_ID})[^;]*?(?:transferiu|vendeu|cedeu)\s+(?:as\s+)?quotas.*?({_ID})",
     re.IGNORECASE | re.DOTALL,
 )
 # "que" é opcional: a nomeação pode vir no mesmo período ("..., que nomeou...")
 # ou num documento separado ("A CNPJ_X nomeou CPF_Y ... poderes"). O outorgante
-# é o id IMEDIATAMENTE antes de "nomeou/constituiu" (sem outro CPF/CNPJ no meio),
+# é o id IMEDIATAMENTE antes de "nomeou/constituiu" (sem outro id no meio),
 # senão o CPF do devedor seria capturado em vez da offshore.
 _PROC_RE = re.compile(
-    rf"({_ID})(?:(?!CPF|CNPJ).)*?(?:nomeou|constituiu)(.*?)({_ID})(.*?poderes)",
+    rf"({_ID})(?:(?!{_ID}).)*?(?:nomeou|constituiu)(.*?)({_ID})(.*?poderes)",
     re.IGNORECASE | re.DOTALL,
 )
 _TX_RE = re.compile(
@@ -98,6 +110,14 @@ _MARCO_RE = re.compile(
     r"\D{0,80}?(\d{2}/\d{2}/\d{4})",
     re.IGNORECASE | re.DOTALL,
 )
+# Vínculo familiar AUTÓNOMO (documento sem procuração): "<laranja> é cunhado
+# do devedor <devedor>". Essencial quando a família vem numa fonte separada
+# das pernas societárias da triangulação.
+_KINSHIP = "|".join(_FAMILIA)
+_FAMILIA_RE = re.compile(
+    rf"({_ID})\b[^.;]{{0,80}}?\b(?:{_KINSHIP})\b[^.;]{{0,40}}?devedor\s+({_ID})",
+    re.IGNORECASE,
+)
 
 
 def parse_document(text: str, source_event_id: str) -> ParsedDocument:
@@ -109,7 +129,7 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
     relations: List[Relation] = []
     transactions: List[Transaction] = []
 
-    cpf_tokens = [t for t in tokens if t.upper().startswith("CPF")]
+    cpf_tokens = [t for t in tokens if normalize_id(t).upper().startswith("CPF")]
     devedor = cpf_tokens[0] if cpf_tokens else None
 
     # Venda/cessão de quotas: "<id> transferiu quotas ... <id destino>"
@@ -148,6 +168,12 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
             value=_to_float(m.group(2)),
             date=_to_iso(m.group(4)) if m.group(4) else None,
         ))
+
+    # Vínculo familiar declarado de forma autónoma (fonte separada)
+    for m in _FAMILIA_RE.finditer(flat):
+        relativo, dev = m.group(1), m.group(2)
+        relations.append(Relation(
+            source_id=dev, target_id=relativo, relation_type="FAMILIAR"))
 
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]

@@ -103,10 +103,12 @@ class AgentDaemon:
                             self.investigator.memory.record_access(cid)
                 elif "INSIGHT_PERICIAL_FRAUDE" in kind:
                     # marca a assinatura como já emitida (dedup do log)
+                    from .investigator import signature
                     payload = json.loads(ep.get("content", "{}"))
-                    sig = (payload.get("tipo_fraude"),
-                           frozenset(payload.get("envolvidos", [])))
-                    self.investigator._emitted.add(sig)
+                    self.investigator._emitted.add(signature(
+                        payload.get("tipo_fraude"),
+                        payload.get("envolvidos", []),
+                        payload.get("severidade", "")))
             except Exception as e:  # noqa: BLE001 — reconstrução nunca derruba
                 self._deadletter(lsn, f"rebuild:{type(e).__name__}:{e}", ep)
         self.metrics["head_lsn"] = head
@@ -129,10 +131,12 @@ class AgentDaemon:
         """Emite insights para fraude já completa no grafo que ainda não
         tenha registo no log (recupera crashes). Idempotente."""
         from .patterns import PATTERNS
+        from .investigator import signature
         inv = self.investigator
         for name in inv._active_patterns():
             for achado in PATTERNS[name](inv.graph):
-                sig = (achado["pattern"], frozenset(achado["envolvidos"]))
+                sig = signature(achado["pattern"], achado["envolvidos"],
+                                achado["severidade"])
                 if sig in inv._emitted:
                     continue
                 inv._emitted.add(sig)

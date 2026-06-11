@@ -40,7 +40,7 @@ A separação de papéis é estrita: o pipeline **ingere sem opinar**; o agente 
 
 1. **Ingestão Multimodal (Os Olhos e Ouvidos)**: processa praticamente qualquer prova material — PDFs (processos), DOCX (contratos), CSV/TXT (extratos), ZIP, e transcreve áudios e vídeos (MP3, MP4, WAV) de escutas e depoimentos. Via `pipeline.py`, conecta **qualquer banco de dados** da AGU (qualquer dialeto SQLAlchemy) com sincronização incremental e checkpoints idempotentes.
 2. **Parsing Estruturado (As Mãos)**: extrai entidades normatizadas (CPFs, CNPJs), relações societárias, transações e marcos judiciais (`agent/parser.py`). Há **resolução de entidades** (`agent/entities.py`) — o mesmo CPF escrito de formas diferentes vira um único nó, com validação de dígitos verificadores — e um **parser por LLM opcional** (`agent/llm_parser.py`, Claude com saída estruturada) que cai graciosamente para o determinístico.
-3. **Correlação Multi-Documento (O Cérebro)**: o daemon acumula entidades e relações num **grafo de caso** (`agent/graph.py`) e corre os padrões sobre o grafo consolidado. A fraude espalhada por várias fontes — venda de quotas na Junta, procuração no cartório, transferências no COAF — é finalmente detectada como um todo, mesmo chegando em documentos e dias diferentes.
+3. **Correlação Multi-Fonte (O Cérebro)**: o daemon acumula entidades e relações num **grafo de caso** (`agent/graph.py`) e corre os padrões sobre o grafo consolidado. A fraude espalhada por **vários bancos E documentos em simultâneo** — venda de quotas no banco da Junta, procuração no banco do Cartório, transferências no banco do COAF, vínculo familiar num PDF — é detectada como um todo, e a proveniência do alerta aponta para **todas** as fontes que o sustentam. Um único `pipeline.py --config sources.json` ingere de todos os bancos e pastas ao mesmo tempo. CPF/CNPJ crus dos bancos (`52998224725`) e tokens de documentos (`CPF_xxx`) resolvem para o **mesmo nó**.
 4. **Filtro Sub-simbólico ACT-R (O Filtro)**: a fórmula de ativação de memória ACT-R prioriza entidades recorrentes e recentes; **DIRETRIZes da Procuradoria dão boost dirigido** aos alvos de interesse.
 5. **Relatório Pericial com Rastreabilidade**: cada insight carrega narrativa jurídica conclusiva, severidade, ativações ACT-R reais e `parents` apontando para os ULIDs de **todos** os documentos-fonte e diretrizes que o sustentam. O `relatorio.py` gera o laudo em Markdown; a cadeia de custódia é verificável por `PROVENANCE`. Insights são **deduplicados** (não há alertas repetidos) e o dedup é reconstruído do próprio log a cada arranque.
 
@@ -116,10 +116,13 @@ Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutoria
 | `test_integration.py` | Custódia ponta a ponta: doc → ULID real → insight → `PROVENANCE` → `AS OF` |
 | `test_daemon.py` | Daemon reage a DIRETRIZ + documento; proveniência composta; **idempotência no re-arranque** |
 | `test_pipeline.py` | Banco SQL + ficheiro → rio → deteção nas duas fontes; checkpoints idempotentes |
+| `test_multibank.py` | **DOIS bancos + documento em simultâneo**: triangulação com as pernas em três fontes fecha-se em CRÍTICA; CPF cru do banco unifica com o token do documento |
+
+Cada e2e sobe o seu próprio `heraclitus-server` isolado (localizado por `HERACLITUS_SERVER_BIN` ou ao lado do repo HeraclitusDB):
 
 ```bash
-pytest tests/          # unitários, em qualquer máquina
-python test_daemon.py  # e2e (localiza o heraclitus-server automaticamente)
+pytest tests/             # 21 unitários, em qualquer máquina
+python test_multibank.py  # e2e multi-fonte (sobe o servidor automaticamente)
 ```
 
 ## Produção (AGU/INSS)

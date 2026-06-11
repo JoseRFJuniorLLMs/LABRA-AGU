@@ -170,6 +170,46 @@ Como funciona:
 
 Para agendar via cron/Task Scheduler em vez de loop: acrescenta `--once`.
 
+### 6.4 Vários bancos + pastas ao mesmo tempo (o caso real da AGU)
+
+A AGU não tem um banco — tem dezenas (Junta, Cartório, COAF, SIAPE...).
+Em vez de um processo por banco, descreva todas as fontes num ficheiro e
+ingira de **todas em simultâneo**, num só comando:
+
+```bash
+python pipeline.py --config sources.json --interval 30
+```
+
+O `sources.json` é uma lista (veja `sources.example.json`):
+
+```json
+[
+  {"type": "sql", "db": "oracle+oracledb://u:p@host/JUNTA",
+   "table": "alteracoes_societarias", "incremental": "id",
+   "template": "{socio} transferiu quotas da empresa {empresa} para {destino} em {data}"},
+  {"type": "sql", "db": "mssql+pyodbc://u:p@host/CARTORIO?driver=ODBC+Driver+17+for+SQL+Server",
+   "table": "procuracoes", "incremental": "rowversion",
+   "template": "{outorgante} nomeou {procurador} com plenos poderes em {data}"},
+  {"type": "sql", "db": "postgresql+psycopg2://u:p@host/coaf",
+   "table": "comunicacoes", "incremental": "updated_at",
+   "template": "{origem} transferiu R$ {valor} para {destino} em {data}"},
+  {"type": "files", "watch_dir": "./entrada/processos"}
+]
+```
+
+**Esta é a resposta à pergunta "o agente trabalha com bancos e documentos
+ao mesmo tempo?":** sim. Cada fonte tem o seu próprio checkpoint (não há
+duplicação nem interferência); uma fonte em falha não para as outras; e o
+daemon **correlaciona tudo no mesmo grafo de caso**. Uma triangulação cujas
+pernas estão em três bancos diferentes + um documento fecha-se como uma só
+fraude, e a sua proveniência aponta para as quatro fontes.
+
+> **CPF/CNPJ: bancos vs documentos.** Os bancos guardam números crus
+> (`52998224725`, `529.982.247-25`); os documentos usam `CPF_xxx`. A
+> resolução de entidades (`agent/entities.py`) valida os dígitos
+> verificadores e faz **os dois resolverem para o mesmo nó** — sem isto, a
+> correlação banco↔documento nunca fecharia.
+
 ## 7. Dar ordens ao agente — DIRETRIZes
 
 Chegou uma denúncia sobre um CPF específico? Ordena o foco:

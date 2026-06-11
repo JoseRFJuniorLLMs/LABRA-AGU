@@ -85,6 +85,37 @@ def test_entidades_mesmo_cpf_formas_diferentes_um_no():
     assert canon in inv.graph.entities
 
 
+def test_cpf_cru_de_banco_unifica_com_token_de_documento():
+    # Bancos guardam CPF cru (sem 'CPF_'); documentos usam o token. Têm de
+    # virar o MESMO nó — senão a correlação banco<->documento nunca fecha.
+    inv = Investigator()
+    inv.process_document(_doc(  # "banco": número cru
+        "52998224725 transferiu quotas da empresa para a offshore 11222333000181.", "BANCO"))
+    out = inv.process_document(_doc(  # "documento": token + procuração
+        "A 11222333000181 nomeou CPF_LARANJA com plenos poderes.", "DOC"))
+    tri = [i for i in out if i["payload"]["tipo_fraude"] == "triangulacao_offshore"]
+    assert tri, "venda (banco cru) + procuração (doc) deviam fechar a triangulação"
+    assert "CPF:52998224725" in tri[0]["payload"]["envolvidos"]
+    assert set(tri[0]["parents"]) >= {"BANCO", "DOC"}
+
+
+def test_elevacao_severidade_reemite():
+    # Triangulação fecha ALTA (sem família); depois um documento de família
+    # eleva a CRÍTICA — isso é um achado NOVO, não uma repetição.
+    inv = Investigator()
+    inv.process_document(_doc(
+        "52998224725 transferiu quotas para 11222333000181.", "B1"))
+    alta = inv.process_document(_doc(
+        "A 11222333000181 nomeou CPF_L com plenos poderes.", "B2"))
+    assert any(i["payload"]["severidade"] == "ALTA"
+               for i in alta if i["payload"]["tipo_fraude"] == "triangulacao_offshore")
+    crit = inv.process_document(_doc(
+        "Apurou-se que CPF_L é cunhado do devedor 52998224725.", "B3"))
+    assert any(i["payload"]["severidade"] == "CRITICA"
+               for i in crit if i["payload"]["tipo_fraude"] == "triangulacao_offshore"), \
+        "elevação por vínculo familiar deve reemitir como CRÍTICA"
+
+
 def test_diretriz_boost_e_proveniencia():
     inv = Investigator()
     inv.register_directive(Directive(

@@ -1,8 +1,5 @@
 """
-Teste de integração LABRA-AGU <-> HeraclitusDB (local).
-
-Pré-requisito: heraclitus-server a correr em localhost:7474.
-    cd ../HeraclitusDB && cargo run --release -p heraclitus-server
+Teste de integração LABRA-AGU <-> HeraclitusDB (servidor FRESCO, isolado).
 
 Verifica o ciclo completo da cadeia de custódia:
   1. Append do documento-fonte (evento imutável no log)
@@ -11,6 +8,7 @@ Verifica o ciclo completo da cadeia de custódia:
   4. Append do insight com `parents` = ULID real do documento
   5. PROVENANCE(insight) devolve exatamente o ULID do documento-fonte
   6. O insight é consultável por GQL (MATCH por attrs) e o payload bate
+  7. AS OF LSN prova que o insight é invisível no passado (event sourcing)
 
 Sai com código 0 (sucesso) ou 1 (falha), imprimindo cada passo.
 """
@@ -20,8 +18,7 @@ import sys
 from agent.client import HeraclitusClient, is_ulid
 from agent.investigator import Investigator
 from agent.parser import parse_document
-
-TARGET = "localhost:7474"
+from agent.testing import server_bin, temp_server
 
 DOC = """
 Relatório COAF / Junta Comercial:
@@ -36,14 +33,17 @@ def step(n, msg):
 
 
 def main() -> int:
-    client = HeraclitusClient(TARGET)
+    if not server_bin():
+        print("SKIP: heraclitus-server não encontrado (defina HERACLITUS_SERVER_BIN)")
+        return 0
+    with temp_server() as target:
+        return _run(target)
 
-    try:
-        head = client.snapshot()
-    except Exception as e:
-        print(f"FALHA: HeraclitusDB não está acessível em {TARGET}: {e}")
-        return 1
-    step(0, f"conectado ao HeraclitusDB (head LSN = {head})")
+
+def _run(target) -> int:
+    client = HeraclitusClient(target)
+    head = client.snapshot()
+    step(0, f"servidor fresco em {target} (head LSN = {head})")
 
     # 1. Custódia: documento-fonte entra no log
     doc_lsn = client.append_document(

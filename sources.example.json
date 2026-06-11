@@ -1,0 +1,31 @@
+[
+  {
+    "type": "sql",
+    "db": "oracle+oracledb://user:senha@host:1521/?service_name=JUNTA",
+    "table": "alteracoes_societarias",
+    "incremental": "id",
+    "template": "{socio} transferiu quotas da empresa {empresa} para {destino} em {data}"
+  },
+  {
+    "type": "sql",
+    "db": "mssql+pyodbc://user:senha@host/CARTORIO?driver=ODBC+Driver+17+for+SQL+Server",
+    "table": "procuracoes",
+    "incremental": "rowversion",
+    "template": "{outorgante} nomeou {procurador} com plenos poderes em {data}"
+  },
+  {
+    "type": "sql",
+    "db": "postgresql+psycopg2://user:senha@host:5432/coaf",
+    "table": "comunicacoes",
+    "incremental": "updated_at",
+    "template": "{origem} transferiu R$ {valor} para {destino} em {data}"
+  },
+  {
+    "type": "files",
+    "watch_dir": "./entrada/processos"
+  },
+  {
+    "type": "files",
+    "watch_dir": "./entrada/escutas"
+  }
+]
