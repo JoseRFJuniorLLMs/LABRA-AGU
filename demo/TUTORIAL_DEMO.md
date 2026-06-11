@@ -35,7 +35,8 @@ O que acontece, em ~10 segundos:
 3. Emite uma **DIRETRIZ da Procuradoria** (boost ACT-R no devedor).
 4. Ingere as 4 fontes pelo pipeline.
 5. O agente **fecha 4 fraudes** (2 CRÍTICAS) e imprime a narrativa com proveniência.
-6. **Abre no browser** um relatório visual institucional (`demo_data/relatorio_demo.html`).
+6. **Abre no browser** um painel único e interativo (`demo_data/painel_demo.html`)
+   com a **barra de tempo lateral** (AS OF), o grafo, os alertas e a cadeia de custódia.
 
 Para correr contra o **serviço Windows** do HeraclitusDB (mostrá-lo a sério):
 
@@ -74,7 +75,8 @@ correlaciona as fontes.
 - **No terminal:** os 4 alertas (TRIANGULAÇÃO e VÉSPERA = CRÍTICAS;
   FRACIONAMENTO e LARANJA = ALTAS), cada um com a proveniência (de que fontes
   veio a prova) e a nota de que o CPF formatado e o cru colapsaram num só nó.
-- **No browser:** o relatório institucional (cores da AGU) com os cartões de
+- **No browser:** o painel único (cores da AGU) com a **barra de tempo lateral**
+  (arraste para reconstruir o caso AS OF qualquer instante), os cartões de
   alerta, o grafo de relações devedor→offshore→laranja, o rio de eventos e a
   cadeia de custódia.
 
@@ -86,19 +88,23 @@ correlaciona as fontes.
 agente lê). O parser é determinístico e reage a frases específicas; pôr o dado
 na coluna errada ou com outra frase faz o alerta não disparar.
 
-### 4a. O jeito fácil — um comando por caso
+### 4a. O jeito fácil — um comando por caso, e ver no painel
 
 ```powershell
 py demo\adicionar_caso.py            # +1 caso novo (CPF/CNPJ válidos, tudo certo)
 py demo\adicionar_caso.py --n 5      # +5 casos
+
+py demo\run.py --keep                # detecta TODOS os casos e abre o painel
 ```
 
-Depois re-ingira (Modo B): com o `py main.py --daemon` a correr,
-`py pipeline.py --config demo\sources.json --once`. Cada caso novo fecha a sua
-triangulação no log do daemon.
+A flag **`--keep`** diz ao `run.py` para **não regenerar** o cenário base e usar
+os casos já em `demo_data` (incluindo os que adicionaste). O painel passa a ter
+um **seletor de casos** no topo — escolhes o caso e arrastas a barra de tempo
+dele. Os números (casos, fraudes, críticas) refletem o total real detectado.
 
-> Nota: `py demo\run.py` **regenera** o cenário base a cada execução (mantém-no
-> determinístico). Para acumular casos, use o fluxo ao vivo (Modo B) acima.
+> Sem `--keep`, `py demo\run.py` **regenera** o cenário base (1 caso,
+> determinístico) — ideal para a demo principal. Use `--keep` para mostrar que
+> o sistema escala para muitos casos.
 
 ### 4b. O contrato — onde e como inserir à mão
 

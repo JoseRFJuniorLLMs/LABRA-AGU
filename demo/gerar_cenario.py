@@ -83,6 +83,14 @@ def construir(base_dir=None, seed=42):
     data = os.path.join(here, "demo_data")
     entrada = os.path.join(data, "entrada")
     os.makedirs(entrada, exist_ok=True)
+    # Limpa documentos de casos antigos (adicionar_caso.py) — o caso base é
+    # sempre determinístico: 1 caso, sem resíduos de execuções anteriores.
+    for _f in os.listdir(entrada):
+        if _f.endswith(".txt"):
+            try:
+                os.remove(os.path.join(entrada, _f))
+            except OSError:
+                pass
 
     # Identidades fictícias com dígitos válidos.
     cpf_devedor = gerar_cpf_valido(rng)   # João Ribeiro (executado fiscal)
