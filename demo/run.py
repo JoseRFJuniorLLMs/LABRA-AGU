@@ -15,6 +15,8 @@ Uso:
 import argparse
 import json
 import os
+import re
+import sqlite3
 import sys
 import threading
 import time
@@ -34,6 +36,8 @@ from agent.daemon import AgentDaemon
 from agent.testing import temp_server, server_bin
 
 from gerar_cenario import construir  # noqa: E402  (após o sys.path)
+from nomes import nome_de  # noqa: E402
+from agent.entities import normalize_id  # noqa: E402
 
 _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
 _ORDEM = ["triangulacao_offshore", "vespera_constricao",
@@ -73,29 +77,71 @@ def _steps_for(tipos):
         return tp in tipos and tipos[tp][1].get("severidade") == "CRITICA"
     N = ["n_dev", "n_off", "n_lar"]
     return [
-        {"lsn": 0, "date": "início", "label": "log vazio — nenhum evento ainda",
+        {"lsn": 0, "date": "início", "ev": "log vazio",
+         "label": "log vazio — nenhum evento ainda",
          "nodes": [], "edges": [], "chips": []},
-        {"lsn": 1, "date": "12/05/2026", "label": "Venda de quotas à offshore (Junta)",
+        {"lsn": 1, "date": "12/05/2026", "ev": "Venda de quotas",
+         "label": "Venda de quotas à offshore (Junta Comercial)",
          "nodes": ["n_dev", "n_off"], "edges": ["e_venda"], "chips": []},
-        {"lsn": 2, "date": "13/05/2026", "label": "Procuração com plenos poderes (Cartório)",
+        {"lsn": 2, "date": "13/05/2026", "ev": "Procuração",
+         "label": "Procuração com plenos poderes ao laranja (Cartório)",
          "nodes": N, "edges": ["e_venda", "e_proc"],
          "chips": [["Triangulação offshore", False]]},
-        {"lsn": 3, "date": "14–16/05/2026", "label": "3 transferências fracionadas (COAF)",
+        {"lsn": 3, "date": "14–16/05/2026", "ev": "Fracionamento",
+         "label": "3 transferências fracionadas abaixo do limiar (COAF)",
          "nodes": N, "edges": ["e_venda", "e_proc", "e_frac"],
          "chips": [["Triangulação offshore", False],
                    ["Fracionamento", crit("fracionamento")]]},
-        {"lsn": 4, "date": "documento", "label": "Vínculo familiar: laranja é cunhado do devedor",
+        {"lsn": 4, "date": "documento", "ev": "Vínculo familiar",
+         "label": "Vínculo familiar: laranja é cunhado do devedor",
          "nodes": N, "edges": ["e_venda", "e_proc", "e_frac", "e_fam"],
          "chips": [["Triangulação offshore", crit("triangulacao_offshore")],
                    ["Fracionamento", crit("fracionamento")],
                    ["Laranja familiar", crit("laranja_familiar")]]},
-        {"lsn": 5, "date": "05/06/2026", "label": "Ordem de bloqueio judicial (penhora) prevista",
+        {"lsn": 5, "date": "05/06/2026", "ev": "Penhora prevista",
+         "label": "Ordem de bloqueio judicial (penhora) prevista",
          "nodes": N, "edges": ["e_venda", "e_proc", "e_frac", "e_fam"],
          "chips": [["Triangulação offshore", crit("triangulacao_offshore")],
                    ["Fracionamento", crit("fracionamento")],
                    ["Laranja familiar", crit("laranja_familiar")],
                    ["Véspera de constrição", crit("vespera_constricao")]]},
     ]
+
+
+def _fmt_brl(num):
+    return "R$ " + f"{num:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+
+def _frac_info(alerts):
+    """Total fracionado (pt-BR) e nº de transferências, do texto do agente."""
+    for a in alerts:
+        if a["tipo"] == "fracionamento":
+            mv = re.search(r"somando R\$ ([\d.,]+)", a["descricao"])
+            mc = re.search(r"realizou (\d+)", a["descricao"])
+            count = mc.group(1) if mc else "3"
+            if mv:
+                try:
+                    return _fmt_brl(float(mv.group(1).replace(",", ""))), count
+                except ValueError:
+                    return "R$ " + mv.group(1), count
+    return "—", None
+
+
+def _cotas_map(junta_path):
+    """devedor canónico -> nº de cotas vendidas (lido da Junta)."""
+    m = {}
+    try:
+        con = sqlite3.connect(junta_path)
+        try:
+            rows = con.execute("SELECT socio, cotas FROM alteracoes").fetchall()
+        except sqlite3.OperationalError:
+            rows = [(s, None) for (s,) in con.execute("SELECT socio FROM alteracoes")]
+        for socio, cotas in rows:
+            m[normalize_id(socio)] = cotas
+        con.close()
+    except Exception:
+        pass
+    return m
 
 
 def run(target, keep=False):
@@ -185,13 +231,16 @@ def run(target, keep=False):
             labs.append(lab)
         return sorted(set(labs)), len(prov)
 
+    cotas_map = _cotas_map(paths["junta"])
     cases = []
     for dev in sorted(cases_map):
         tipos = cases_map[dev]
         env = tipos.get("triangulacao_offshore", (None, {}))[1].get("envolvidos", [])
-        dev_l = _fmt_id(env[0]) if len(env) > 0 else _fmt_id(dev)
-        off_l = _fmt_id(env[1]) if len(env) > 1 else "—"
-        lar_l = _fmt_id(env[2]) if len(env) > 2 else "—"
+        dev_c = env[0] if len(env) > 0 else dev
+        off_c = env[1] if len(env) > 1 else ""
+        lar_c = env[2] if len(env) > 2 else ""
+        dev_l, off_l, lar_l = _fmt_id(dev_c), _fmt_id(off_c) if off_c else "—", _fmt_id(lar_c) if lar_c else "—"
+        dev_n, off_n, lar_n = nome_de(dev_c), nome_de(off_c), nome_de(lar_c)
         alerts = []
         for tp in _ORDEM:
             if tp not in tipos:
@@ -202,9 +251,17 @@ def run(target, keep=False):
                            "descricao": p.get("descricao", "").strip(),
                            "conclusao": p.get("conclusao_juridica", ""),
                            "fontes": fontes, "n_prov": nprov})
+        valor, count = _frac_info(alerts)
+        cotas = cotas_map.get(dev_c)
+        lbl_venda = (f"{cotas:,}".replace(",", ".") + " cotas") if cotas else "venda de quotas"
+        lbl_frac = (f"{count}× {valor}") if valor != "—" else "fracionamento"
         cases.append({"dev": dev_l, "off": off_l, "lar": lar_l,
+                      "dev_n": dev_n, "off_n": off_n, "lar_n": lar_n,
+                      "valor": valor,
+                      "lbl_venda": lbl_venda, "lbl_proc": "plenos poderes",
+                      "lbl_frac": lbl_frac, "lbl_fam": "cunhado (familiar)",
                       "alerts": alerts, "steps": _steps_for(tipos)})
-        print(f"  Caso · devedor {dev_l}: {len(alerts)} fraude(s) "
+        print(f"  Caso · {dev_n} ({dev_l}): {len(alerts)} fraude(s) "
               f"[{', '.join(a['tipo'] for a in alerts)}]")
 
     total_fraudes = sum(len(c["alerts"]) for c in cases)

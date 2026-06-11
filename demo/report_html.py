@@ -30,9 +30,9 @@ _CSS = """<style>
   .stat{background:#fff;border:1px solid #D8E0EA;border-radius:12px;padding:14px 18px;flex:1;min-width:140px;}
   .stat .n{font-size:1.7rem;font-weight:800;}
   .stat .l{color:#5B6B7B;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;}
-  .cases-nav{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 4px;}
-  .cbtn{font-size:.78rem;padding:7px 12px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#1B2B40;cursor:pointer;}
-  .cbtn.on{border:2px solid #1351B4;color:#0C326F;font-weight:600;}
+  .case-bar{display:flex;align-items:center;gap:10px;margin:18px 0 4px;flex-wrap:wrap;}
+  .case-lbl{font-size:.8rem;color:#5B6B7B;}
+  .case-bar select{font-size:.85rem;padding:8px 12px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#1B2B40;min-width:340px;max-width:100%;cursor:pointer;}
   .asof{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:.85rem;color:#5B6B7B;}
   .asof b{color:#0C326F;font-size:1rem;}
   .asof .desc{margin-left:auto;color:#1B2B40;}
@@ -45,6 +45,16 @@ _CSS = """<style>
   .ticks{display:flex;flex-direction:column;justify-content:space-between;height:330px;font-size:12px;}
   .tick{display:flex;align-items:center;gap:8px;color:#5B6B7B;cursor:pointer;white-space:nowrap;}
   .tick .dot{width:9px;height:9px;border-radius:50%;background:#C3CEDC;flex:none;}
+  .tick .tk{display:flex;flex-direction:column;line-height:1.15;}
+  .tick .td{font-weight:600;color:#1B2B40;}
+  .tick .tev{font-size:10.5px;color:#5B6B7B;}
+  .tick.on .td{color:#0C326F;}
+  .ficha{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  .fe{background:#fff;border:1px solid #D8E0EA;border-radius:10px;padding:9px 13px;font-size:.82rem;}
+  .fe .role{display:block;font-size:.66rem;color:#5B6B7B;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;}
+  .fe b{color:#0C326F;}
+  .fe .id{color:#5B6B7B;font-variant-numeric:tabular-nums;}
+  .fe.val b{color:#C0392B;}
   .cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));}
   .card{background:#fff;border:1px solid #D8E0EA;border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px #0c326f0f;}
   .card-top{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
@@ -76,7 +86,13 @@ _HTML = """<body>
     <div class="stat"><div class="n" style="color:#1351B4">4</div><div class="l">Fontes correlacionadas</div></div>
   </div>
 
-  <div class="cases-nav" id="cases-nav"></div>
+  <div class="case-bar" id="case-bar">
+    <span class="case-lbl">Caso investigado</span>
+    <select id="case-select"></select>
+  </div>
+
+  <h2>Ficha do Caso — quem é quem</h2>
+  <div class="ficha" id="ficha"></div>
 
   <h2>Linha do Tempo — Reconstrução AS OF (arraste a barra)</h2>
   <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
@@ -92,9 +108,9 @@ _HTML = """<body>
         <text id="l_proc" x="378" y="170" font-size="11" fill="#9B271B" opacity="0">procurador</text>
         <text id="l_frac" x="186" y="240" font-size="11" fill="#8A5908" opacity="0">3&#215; fracionado</text>
         <text id="l_fam" x="232" y="305" text-anchor="middle" font-size="11" fill="#8A5908" opacity="0">cunhado (familiar)</text>
-        <g id="n_dev" opacity="0.25"><circle cx="100" cy="165" r="40" fill="#fff" stroke="#C0392B" stroke-width="2.5"/><text x="100" y="160" text-anchor="middle" font-size="12" font-weight="700" fill="#1B2B40">DEVEDOR</text><text id="t_dev" x="100" y="176" text-anchor="middle" font-size="9.5" fill="#5B6B7B"></text></g>
-        <g id="n_off" opacity="0.25"><circle cx="360" cy="75" r="40" fill="#fff" stroke="#1351B4" stroke-width="2.5"/><text x="360" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#1B2B40">OFFSHORE</text><text id="t_off" x="360" y="86" text-anchor="middle" font-size="9.5" fill="#5B6B7B"></text></g>
-        <g id="n_lar" opacity="0.25"><circle cx="360" cy="255" r="40" fill="#fff" stroke="#B9770E" stroke-width="2.5"/><text x="360" y="250" text-anchor="middle" font-size="12" font-weight="700" fill="#1B2B40">LARANJA</text><text id="t_lar" x="360" y="266" text-anchor="middle" font-size="9.5" fill="#5B6B7B"></text></g>
+        <g id="n_dev" opacity="0.25"><circle cx="100" cy="165" r="42" fill="#fff" stroke="#C0392B" stroke-width="2.5"/><text x="100" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">DEVEDOR</text><text id="t_dev" x="100" y="168" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_dev2" x="100" y="179" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
+        <g id="n_off" opacity="0.25"><circle cx="360" cy="75" r="42" fill="#fff" stroke="#1351B4" stroke-width="2.5"/><text x="360" y="65" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">OFFSHORE</text><text id="t_off" x="360" y="78" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_off2" x="360" y="89" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
+        <g id="n_lar" opacity="0.25"><circle cx="360" cy="255" r="42" fill="#fff" stroke="#B9770E" stroke-width="2.5"/><text x="360" y="245" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">LARANJA</text><text id="t_lar" x="360" y="258" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_lar2" x="360" y="269" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
       </svg>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
@@ -122,15 +138,15 @@ _JS = """
   el('m_cases').textContent=TOTALS.cases;
   el('m_fraudes').textContent=TOTALS.fraudes;
   el('m_criticas').textContent=TOTALS.criticas;
-  var active=0, nav=el('cases-nav'), scrub=el('scrub'), ticks=el('ticks');
+  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks');
   if(CASES.length>1){
     CASES.forEach(function(c,i){
-      var b=document.createElement('button'); b.className='cbtn';
-      b.textContent='Caso '+(i+1)+' · '+c.dev;
-      b.onclick=function(){active=i;renderCase();};
-      nav.appendChild(b);
+      var o=document.createElement('option'); o.value=i;
+      o.textContent='Caso '+(i+1)+' · '+c.dev_n+' ('+c.dev+') · '+c.alerts.length+' fraude(s)';
+      sel.appendChild(o);
     });
-  } else { nav.style.display='none'; }
+    sel.onchange=function(){active=+sel.value;renderCase();};
+  } else { el('case-bar').style.display='none'; }
   function card(a){
     var sc=sev(a.sev), d=document.createElement('div'); d.className='card';
     d.style.borderLeft='4px solid '+sc[0];
@@ -155,23 +171,34 @@ _JS = """
       sp.textContent=(crit?'CRÍTICA · ':'ALTA · ')+ch[0]; box.appendChild(sp);
     });
     Array.prototype.forEach.call(ticks.children,function(r){
-      var on=+r.getAttribute('data-i')===s; r.style.color=on?'#0C326F':'#5B6B7B'; r.style.fontWeight=on?'600':'400';
+      var on=+r.getAttribute('data-i')===s;
+      if(on) r.classList.add('on'); else r.classList.remove('on');
       r.querySelector('.dot').style.background=on?'#1351B4':'#C3CEDC';
     });
   }
+  function short(s){return s && s.length>15 ? s.slice(0,14)+'…' : s;}
+  function fe(role,nome,id,cls){
+    return '<div class="fe '+(cls||'')+'"><span class="role">'+role+'</span><b>'+nome+'</b>'+(id?' <span class="id">'+id+'</span>':'')+'</div>';
+  }
   function renderCase(){
     var c=CASES[active];
-    el('t_dev').textContent=c.dev; el('t_off').textContent=c.off; el('t_lar').textContent=c.lar;
+    el('ficha').innerHTML = fe('Devedor', c.dev_n, c.dev)
+      + fe('Offshore', c.off_n, c.off)
+      + fe('Laranja (cunhado)', c.lar_n, c.lar)
+      + fe('Valor dissipado', c.valor, '', 'val');
+    el('t_dev').textContent=short(c.dev_n); el('t_dev2').textContent=c.dev;
+    el('t_off').textContent=short(c.off_n); el('t_off2').textContent=c.off;
+    el('t_lar').textContent=short(c.lar_n); el('t_lar2').textContent=c.lar;
     var box=el('cards'); box.innerHTML=''; c.alerts.forEach(function(a){box.appendChild(card(a));});
     scrub.max=c.steps.length-1; scrub.value=c.steps.length-1;
     ticks.innerHTML='';
     c.steps.forEach(function(st,i){
       var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
-      r.innerHTML='<span class="dot"></span><span>'+st.date+'</span>';
+      r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+st.date+'</span><span class="tev">'+st.ev+'</span></span>';
       r.onclick=function(){scrub.value=i;renderStep();};
       ticks.appendChild(r);
     });
-    Array.prototype.forEach.call(nav.children,function(b,i){if(i===active)b.classList.add('on');else b.classList.remove('on');});
+    sel.value=active;
     renderStep();
   }
   scrub.addEventListener('input',renderStep);

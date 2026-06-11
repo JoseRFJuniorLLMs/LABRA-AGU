@@ -102,8 +102,8 @@ def construir(base_dir=None, seed=42):
     # tem de colapsá-los no mesmo nó (CPF:<digitos>).
     _mk_bank(
         os.path.join(data, "junta.db"), "alteracoes",
-        "socio TEXT, destino TEXT, data TEXT",
-        [(fmt_cpf(cpf_devedor), fmt_cnpj(cnpj_offshore), "2026-05-12")],
+        "socio TEXT, destino TEXT, data TEXT, cotas INTEGER",
+        [(fmt_cpf(cpf_devedor), fmt_cnpj(cnpj_offshore), "2026-05-12", 95000)],
     )
 
     # ── CARTÓRIO: procuração com plenos poderes (offshore → laranja) ──

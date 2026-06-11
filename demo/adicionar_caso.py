@@ -40,9 +40,10 @@ def adicionar_um(rng, data, entrada):
     off = gerar_cnpj_valido(rng)  # offshore
 
     # JUNTA — venda de quotas (CPF do devedor FORMATADO).
+    cotas = rng.choice([60000, 72000, 85000, 90000, 95000, 110000, 125000])
     _ins(os.path.join(data, "junta.db"), "alteracoes",
-         "socio TEXT, destino TEXT, data TEXT",
-         [(fmt_cpf(dev), fmt_cnpj(off), "2026-05-12")])
+         "socio TEXT, destino TEXT, data TEXT, cotas INTEGER",
+         [(fmt_cpf(dev), fmt_cnpj(off), "2026-05-12", cotas)])
 
     # CARTÓRIO — procuração com plenos poderes (offshore -> laranja).
     _ins(os.path.join(data, "cartorio.db"), "procuracoes",
