@@ -9,3 +9,4 @@ agent_deadletter*.jsonl
 pipeline_state.json
 labra_srv_*
 .pytest_cache/
+demo/demo_data/
