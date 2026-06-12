@@ -81,7 +81,8 @@ def _md_to_html(md: str) -> str:
 
 _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
 _ORDEM = ["triangulacao_offshore", "vespera_constricao",
-          "fracionamento", "laranja_familiar"]
+          "fracionamento", "laranja_familiar",
+          "offshore_cascata", "doacao_cruzada", "holding_usufruto"]
 
 
 def _sqlite_url(path: str) -> str:

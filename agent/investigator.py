@@ -19,9 +19,14 @@ import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 from .act_r import ACTREngine
+from .asset_shield import SHIELD_PATTERNS
 from .graph import CaseGraph
 from .parser import ParsedDocument
 from .patterns import PATTERNS
+
+# Catálogo completo que o agente vigia: padrões base (patterns.py) + heurísticas
+# avançadas de blindagem (asset_shield.py — Fase 2). Mesmo contrato de detector.
+CATALOG = {**PATTERNS, **SHIELD_PATTERNS}
 
 
 def signature(pattern: str, envolvidos, severidade: str):
@@ -40,7 +45,7 @@ class Directive:
         self.event_id = event_id          # ULID do evento DIRETRIZ no log
         self.alvos = [normalize_id(a) for a in (alvos or [])]
         self.foco = foco
-        self.padroes = [p for p in (padroes or []) if p in PATTERNS]
+        self.padroes = [p for p in (padroes or []) if p in CATALOG]
         self.boost = boost
 
     def __repr__(self):
@@ -66,7 +71,7 @@ class Investigator:
         """Se alguma diretriz restringe padrões, a união delas manda;
         sem diretrizes restritivas, o catálogo inteiro é vigiado."""
         focados = [p for d in self.directives for p in d.padroes]
-        return list(dict.fromkeys(focados)) if focados else list(PATTERNS)
+        return list(dict.fromkeys(focados)) if focados else list(CATALOG)
 
     def _matching_directives(self, envolvidos: List[str], pattern: str) -> List[Directive]:
         """Diretrizes que influenciaram este achado (por alvo ou padrão)."""
@@ -91,7 +96,7 @@ class Investigator:
         # 2. Padrões sobre o grafo inteiro
         insights: List[dict] = []
         for name in self._active_patterns():
-            for achado in PATTERNS[name](self.graph):
+            for achado in CATALOG[name](self.graph):
                 sig = signature(achado["pattern"], achado["envolvidos"],
                                 achado["severidade"])
                 if sig in self._emitted:

@@ -130,11 +130,10 @@ class AgentDaemon:
     def _reconcile(self):
         """Emite insights para fraude já completa no grafo que ainda não
         tenha registo no log (recupera crashes). Idempotente."""
-        from .patterns import PATTERNS
-        from .investigator import signature
+        from .investigator import CATALOG, signature
         inv = self.investigator
         for name in inv._active_patterns():
-            for achado in PATTERNS[name](inv.graph):
+            for achado in CATALOG[name](inv.graph):
                 sig = signature(achado["pattern"], achado["envolvidos"],
                                 achado["severidade"])
                 if sig in inv._emitted:
