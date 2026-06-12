@@ -40,6 +40,63 @@ from gerar_cenario import construir  # noqa: E402  (após o sys.path)
 from nomes import nome_de  # noqa: E402
 from agent.entities import normalize_id  # noqa: E402
 from agent.theory_builder import TheoryBuilder  # noqa: E402
+from agent.graph_timeline import GraphTimeline  # noqa: E402
+
+_EDGE_BASE = {"PROCURADOR_COM_PODERES": "procurador", "FAMILIAR": "cunhado",
+              "DOACAO": "doou bem", "ADMINISTRA": "usufruto/admin",
+              "CONTROLA": "controla"}
+
+
+def _br(dt):
+    return f"{dt[8:10]}/{dt[5:7]}" if dt and len(dt) >= 10 else (dt or "")
+
+
+def _subgraph(g, devedor, cotas_map):
+    """Subgrafo do caso (componente conexo do devedor): nós + arestas reais +
+    a linha do tempo (uma marca por documento/ULID, em ordem)."""
+    from collections import defaultdict as _dd
+    eds = []
+    for rt, lst in g.relations.items():
+        for r in lst:
+            ev = min(r["events"]) if r["events"] else ""
+            eds.append([r["src"], r["dst"], rt, r.get("value"), r.get("date"), ev])
+    for t in g.transactions:
+        ev = min(t["events"]) if t["events"] else ""
+        eds.append([t["src"], t["dst"], "TRANSFERENCIA", t.get("value"), t.get("date"), ev])
+    adj = _dd(set)
+    for s, d, *_ in eds:
+        adj[s].add(d); adj[d].add(s)
+    comp, stack = set(), [devedor]
+    while stack:
+        n = stack.pop()
+        if n in comp:
+            continue
+        comp.add(n); stack.extend(adj[n] - comp)
+    eds = [e for e in eds if e[0] in comp and e[1] in comp]
+    ulids = sorted({e[5] for e in eds if e[5]})
+    ti = {u: i for i, u in enumerate(ulids)}
+    nodes = [{"id": c, "label": nome_de(c) or g.entities.get(c, c),
+              "id_fmt": _fmt_id(c), "kind": g.entity_kind.get(c, "")}
+             for c in comp]
+    edges = []
+    for s, d, rt, val, dt, ev in eds:
+        if rt == "VENDEDOR_QUOTAS":
+            ct = cotas_map.get(s)
+            lab = (f"vendeu {ct:,}".replace(",", ".") + " cotas") if ct else "vendeu quotas"
+        elif rt == "TRANSFERENCIA":
+            lab = ("R$ " + f"{val:,.0f}".replace(",", ".")) if val else "transferiu"
+        else:
+            lab = _EDGE_BASE.get(rt, rt.lower())
+        edges.append({"src": s, "dst": d, "kind": rt, "label": lab, "t": ti.get(ev, 0)})
+    ticks = []
+    for u in ulids:
+        kinds = {e[2] for e in eds if e[5] == u}
+        dt = next((e[4] for e in eds if e[5] == u and e[4]), "")
+        lab = ("Venda de quotas" if "VENDEDOR_QUOTAS" in kinds else
+               "Procuração" if "PROCURADOR_COM_PODERES" in kinds else
+               "Fracionamento" if "TRANSFERENCIA" in kinds else "Documento (vínculos)")
+        ticks.append({"label": lab, "date": _br(dt)})
+    return nodes, edges, ticks
 
 
 def _md_to_html(md: str) -> str:
@@ -273,9 +330,13 @@ def run(target, keep=False):
         return sorted(set(labs)), len(prov)
 
     cotas_map = _cotas_map(paths["junta"])
-    # Teoria do Caso por devedor (Fase 2): minuta jurídica + matriz de evidências.
+    # CaseGraph reconstruído UMA vez (AS OF agora) — serve o grafo dinâmico do
+    # painel e a Teoria do Caso (sem reconstruir duas vezes).
+    g_full = None
     try:
-        teorias = {t.devedor: t for t in TheoryBuilder(client).build_all()}
+        tl = GraphTimeline(client)
+        g_full = tl.at_lsn(tl.head())
+        teorias = {t.devedor: t for t in TheoryBuilder(client).build_all(graph=g_full)}
     except Exception as e:  # noqa: BLE001 — o painel não depende disto
         print(f"  (teoria do caso indisponível: {e})")
         teorias = {}
@@ -307,13 +368,16 @@ def run(target, keep=False):
         matriz = ([{"tipo": a["pattern"], "sev": a["severidade"],
                     "score": a["evidence_score"]} for a in teo.matriz_evidencias]
                   if teo else [])
+        if g_full is not None:
+            g_nodes, g_edges, g_ticks = _subgraph(g_full, dev_c, cotas_map)
+        else:
+            g_nodes, g_edges, g_ticks = [], [], []
         cases.append({"dev": dev_l, "off": off_l, "lar": lar_l,
                       "dev_n": dev_n, "off_n": off_n, "lar_n": lar_n,
-                      "valor": valor,
-                      "lbl_venda": lbl_venda, "lbl_proc": "plenos poderes",
-                      "lbl_frac": lbl_frac, "lbl_fam": "cunhado (familiar)",
+                      "valor": valor, "devedor_id": dev_c,
+                      "nodes": g_nodes, "edges": g_edges, "ticks": g_ticks,
                       "minuta_html": minuta_html, "matriz": matriz,
-                      "alerts": alerts, "steps": _steps_for(tipos)})
+                      "alerts": alerts})
         print(f"  Caso · {dev_n} ({dev_l}): {len(alerts)} fraude(s) "
               f"[{', '.join(a['tipo'] for a in alerts)}]")
 

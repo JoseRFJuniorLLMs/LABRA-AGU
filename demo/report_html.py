@@ -115,20 +115,7 @@ _HTML = """<body>
   <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
   <div class="stage">
     <div class="panel">
-      <svg viewBox="0 0 480 330" width="100%" role="img" aria-label="Grafo da fraude que se monta ao longo do tempo">
-        <defs><marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94A3B8"/></marker></defs>
-        <line id="e_venda" x1="100" y1="165" x2="360" y2="75" stroke="#C0392B" stroke-width="2.2" marker-end="url(#ah)" opacity="0"/>
-        <line id="e_proc" x1="360" y1="75" x2="360" y2="255" stroke="#C0392B" stroke-width="2.2" marker-end="url(#ah)" opacity="0"/>
-        <line id="e_frac" x1="100" y1="165" x2="360" y2="255" stroke="#B9770E" stroke-width="2.2" marker-end="url(#ah)" opacity="0"/>
-        <path id="e_fam" d="M108,185 Q235,310 348,268" stroke="#B9770E" stroke-width="2" fill="none" stroke-dasharray="5 4" opacity="0"/>
-        <text id="l_venda" x="222" y="108" text-anchor="middle" font-size="11" fill="#9B271B" opacity="0">vendeu quotas</text>
-        <text id="l_proc" x="378" y="170" font-size="11" fill="#9B271B" opacity="0">procurador</text>
-        <text id="l_frac" x="186" y="240" font-size="11" fill="#8A5908" opacity="0">3&#215; fracionado</text>
-        <text id="l_fam" x="232" y="305" text-anchor="middle" font-size="11" fill="#8A5908" opacity="0">cunhado (familiar)</text>
-        <g id="n_dev" opacity="0.25"><circle cx="100" cy="165" r="42" fill="#fff" stroke="#C0392B" stroke-width="2.5"/><text x="100" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">DEVEDOR</text><text id="t_dev" x="100" y="168" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_dev2" x="100" y="179" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
-        <g id="n_off" opacity="0.25"><circle cx="360" cy="75" r="42" fill="#fff" stroke="#1351B4" stroke-width="2.5"/><text x="360" y="65" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">OFFSHORE</text><text id="t_off" x="360" y="78" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_off2" x="360" y="89" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
-        <g id="n_lar" opacity="0.25"><circle cx="360" cy="255" r="42" fill="#fff" stroke="#B9770E" stroke-width="2.5"/><text x="360" y="245" text-anchor="middle" font-size="11" font-weight="700" fill="#1B2B40">LARANJA</text><text id="t_lar" x="360" y="258" text-anchor="middle" font-size="9" fill="#0C326F"></text><text id="t_lar2" x="360" y="269" text-anchor="middle" font-size="7.5" fill="#5B6B7B"></text></g>
-      </svg>
+      <svg id="g" viewBox="0 0 760 360" width="100%" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></svg>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
     <div class="scrubber">
@@ -159,92 +146,91 @@ _HTML = """<body>
 
 _JS = """
   var el=function(id){return document.getElementById(id);};
+  function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function short(s,n){n=n||14; s=s||''; return s.length>n?s.slice(0,n-1)+'…':s;}
   function sev(s){return s==='CRITICA'?['#C0392B','#FBE9E7','CRÍTICA']:s==='ALTA'?['#B9770E','#FCF3E3','ALTA']:['#5B6B7B','#EEF2F7',s];}
-  el('m_cases').textContent=TOTALS.cases;
-  el('m_fraudes').textContent=TOTALS.fraudes;
-  el('m_criticas').textContent=TOTALS.criticas;
-  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks');
+  el('m_cases').textContent=TOTALS.cases; el('m_fraudes').textContent=TOTALS.fraudes; el('m_criticas').textContent=TOTALS.criticas;
+  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks'), svg=el('g');
   if(CASES.length>1){
-    CASES.forEach(function(c,i){
-      var o=document.createElement('option'); o.value=i;
-      o.textContent='Caso '+(i+1)+' · '+c.dev_n+' ('+c.dev+') · '+c.alerts.length+' fraude(s)';
-      sel.appendChild(o);
-    });
+    CASES.forEach(function(c,i){ var o=document.createElement('option'); o.value=i;
+      o.textContent='Caso '+(i+1)+' · '+c.dev_n+' ('+c.dev+') · '+c.alerts.length+' fraude(s)'; sel.appendChild(o); });
     sel.onchange=function(){active=+sel.value;renderCase();};
   } else { el('case-bar').style.display='none'; }
   function card(a){
-    var sc=sev(a.sev), d=document.createElement('div'); d.className='card';
-    d.style.borderLeft='4px solid '+sc[0];
+    var sc=sev(a.sev), d=document.createElement('div'); d.className='card'; d.style.borderLeft='4px solid '+sc[0];
     d.innerHTML='<div class="card-top"><span class="badge" style="background:'+sc[1]+';color:'+sc[0]+';border:1px solid '+sc[0]+'">'+sc[2]+'</span><span class="tipo">'+a.tipo.replace(/_/g,' ').toUpperCase()+'</span></div>'
       +'<p class="desc">'+a.descricao+'</p><p class="conc">'+a.conclusao+'</p>'
       +'<div class="prov">&#8627; proveniência: <b>'+a.n_prov+'</b> evento(s) — '+a.fontes.join(' · ')+'</div>';
     return d;
   }
-  var ALL_E=['e_venda','e_proc','e_frac','e_fam'], ALL_L=['l_venda','l_proc','l_frac','l_fam'], ALL_N=['n_dev','n_off','n_lar'];
-  function op(id,v){var e=el(id); if(e) e.style.opacity=v;}
-  function renderStep(){
-    var c=CASES[active], s=+scrub.value, st=c.steps[s];
-    el('asof').textContent='LSN '+st.lsn+' · '+st.date;
-    el('asof-desc').textContent=st.label;
-    ALL_N.forEach(function(id){op(id, st.nodes.indexOf(id)>=0?1:0.25);});
-    ALL_E.forEach(function(id,i){var on=st.edges.indexOf(id)>=0; op(id,on?1:0); op(ALL_L[i],on?1:0);});
-    var box=el('alerts-live'); box.innerHTML='';
-    if(!st.chips.length){var e=document.createElement('span'); e.style.cssText='font-size:12px;color:#8a9aab'; e.textContent='sem alertas neste ponto do tempo'; box.appendChild(e);}
-    st.chips.forEach(function(ch){
-      var crit=ch[1], col=crit?'#C0392B':'#B9770E', bg=crit?'#FBE9E7':'#FCF3E3';
-      var sp=document.createElement('span'); sp.className='chip'; sp.style.color=col; sp.style.background=bg; sp.style.border='1px solid '+col;
-      sp.textContent=(crit?'CRÍTICA · ':'ALTA · ')+ch[0]; box.appendChild(sp);
-    });
-    Array.prototype.forEach.call(ticks.children,function(r){
-      var on=+r.getAttribute('data-i')===s;
-      if(on) r.classList.add('on'); else r.classList.remove('on');
-      r.querySelector('.dot').style.background=on?'#1351B4':'#C3CEDC';
-    });
+  function fe(role,nome,id,cls){ return '<div class="fe '+(cls||'')+'"><span class="role">'+role+'</span><b>'+nome+'</b>'+(id?' <span class="id">'+id+'</span>':'')+'</div>'; }
+
+  // ── grafo dinâmico: layout por níveis (BFS a partir do devedor) ──
+  function layout(c){
+    var adj={}; c.nodes.forEach(function(n){adj[n.id]=[];});
+    c.edges.forEach(function(e){ if(adj[e.src]&&adj[e.dst]){adj[e.src].push(e.dst);adj[e.dst].push(e.src);} });
+    var lvl={}, q=[c.devedor_id]; lvl[c.devedor_id]=0;
+    while(q.length){ var u=q.shift(); (adj[u]||[]).forEach(function(w){ if(lvl[w]===undefined){lvl[w]=lvl[u]+1;q.push(w);} }); }
+    var byL={}; c.nodes.forEach(function(n){ var L=(lvl[n.id]===undefined)?1:lvl[n.id]; (byL[L]=byL[L]||[]).push(n); });
+    var ks=Object.keys(byL).map(Number), maxL=Math.max.apply(null,ks), W=760,H=360,pad=72,pos={};
+    ks.forEach(function(L){ var arr=byL[L], x=maxL?pad+(L/maxL)*(W-2*pad):W/2;
+      arr.forEach(function(n,i){ pos[n.id]={x:x, y:H*(i+1)/(arr.length+1)}; }); });
+    return pos;
   }
-  function short(s){return s && s.length>15 ? s.slice(0,14)+'…' : s;}
-  function fe(role,nome,id,cls){
-    return '<div class="fe '+(cls||'')+'"><span class="role">'+role+'</span><b>'+nome+'</b>'+(id?' <span class="id">'+id+'</span>':'')+'</div>';
+  function renderGraph(c){
+    var pos=layout(c);
+    var P=['<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94A3B8"/></marker></defs>'];
+    c.edges.forEach(function(e){
+      var a=pos[e.src], b=pos[e.dst]; if(!a||!b) return;
+      var col=(e.kind==='VENDEDOR_QUOTAS'||e.kind==='PROCURADOR_COM_PODERES'||e.kind==='FAMILIAR')?'#C0392B':'#B9770E';
+      P.push('<line class="ed" data-t="'+e.t+'" x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" stroke="'+col+'" stroke-width="1.8" marker-end="url(#ah)" opacity="0"/>');
+      var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+      P.push('<rect class="el" data-t="'+e.t+'" x="'+(mx-44)+'" y="'+(my-9)+'" width="88" height="15" rx="5" fill="#fff" stroke="'+col+'" opacity="0"/>');
+      P.push('<text class="el" data-t="'+e.t+'" x="'+mx+'" y="'+(my+2)+'" text-anchor="middle" font-size="9" fill="'+col+'" opacity="0">'+esc(short(e.label,17))+'</text>');
+    });
+    c.nodes.forEach(function(n){
+      var p=pos[n.id], col=(n.id===c.devedor_id)?'#C0392B':((n.kind||'').indexOf('JURIDICA')>=0?'#1351B4':'#B9770E');
+      P.push('<g class="nd" data-id="'+esc(n.id)+'" opacity="0.18"><circle cx="'+p.x+'" cy="'+p.y+'" r="31" fill="#fff" stroke="'+col+'" stroke-width="2.4"/>'
+        +'<text x="'+p.x+'" y="'+(p.y-1)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#1B2B40">'+esc(short(n.label,12))+'</text>'
+        +'<text x="'+p.x+'" y="'+(p.y+9)+'" text-anchor="middle" font-size="6.5" fill="#5B6B7B">'+esc(n.id_fmt)+'</text></g>');
+    });
+    svg.innerHTML=P.join('');
+  }
+  function renderReveal(){
+    var c=CASES[active], p=+scrub.value;
+    Array.prototype.forEach.call(svg.querySelectorAll('.ed,.el'),function(x){ x.style.opacity=(+x.getAttribute('data-t')<=p)?1:0; });
+    var shown={}; shown[c.devedor_id]=1;
+    c.edges.forEach(function(e){ if(e.t<=p){shown[e.src]=1;shown[e.dst]=1;} });
+    Array.prototype.forEach.call(svg.querySelectorAll('.nd'),function(gn){ gn.style.opacity=shown[gn.getAttribute('data-id')]?1:0.18; });
+    var n=(c.ticks||[]).length, tk=(c.ticks&&c.ticks[p])||{label:'',date:''};
+    el('asof').textContent='passo '+(p+1)+'/'+n+(tk.date?' · '+tk.date:'');
+    el('asof-desc').textContent=tk.label||'';
+    Array.prototype.forEach.call(ticks.children,function(r){ var on=+r.getAttribute('data-i')===p;
+      if(on)r.classList.add('on');else r.classList.remove('on'); r.querySelector('.dot').style.background=on?'#1351B4':'#C3CEDC'; });
   }
   function renderCase(){
     var c=CASES[active];
-    el('ficha').innerHTML = fe('Devedor', c.dev_n, c.dev)
-      + fe('Offshore', c.off_n, c.off)
-      + fe('Laranja (cunhado)', c.lar_n, c.lar)
-      + fe('Valor dissipado', c.valor, '', 'val');
-    el('t_dev').textContent=short(c.dev_n); el('t_dev2').textContent=c.dev;
-    el('t_off').textContent=short(c.off_n); el('t_off2').textContent=c.off;
-    el('t_lar').textContent=short(c.lar_n); el('t_lar2').textContent=c.lar;
-    el('l_venda').textContent=c.lbl_venda; el('l_proc').textContent=c.lbl_proc;
-    el('l_frac').textContent=c.lbl_frac; el('l_fam').textContent=c.lbl_fam;
+    el('ficha').innerHTML=fe('Devedor',c.dev_n,c.dev)+fe('Offshore',c.off_n,c.off)+fe('Laranja (cunhado)',c.lar_n,c.lar)+fe('Valor dissipado',c.valor,'','val');
     var box=el('cards'); box.innerHTML=''; c.alerts.forEach(function(a){box.appendChild(card(a));});
     var mz=el('matriz'); mz.innerHTML='';
-    (c.matriz||[]).forEach(function(m){
-      var sc=sev(m.sev), pct=Math.round((m.score||0)*100);
+    (c.matriz||[]).forEach(function(m){ var sc=sev(m.sev), pct=Math.round((m.score||0)*100);
       var row=document.createElement('div'); row.className='mrow';
-      row.innerHTML='<span class="mt">'+m.tipo.replace(/_/g,' ')+'</span>'
-        +'<span class="mbar"><i style="width:'+pct+'%;background:'+sc[0]+'"></i></span>'
-        +'<span class="msc">'+(m.score!=null?m.score.toFixed(2):'—')+'</span>';
-      mz.appendChild(row);
-    });
-    el('minuta').innerHTML = c.minuta_html || '<p style="color:#8a9aab">Sem minuta para este caso.</p>';
-    scrub.max=c.steps.length-1; scrub.value=c.steps.length-1;
+      row.innerHTML='<span class="mt">'+m.tipo.replace(/_/g,' ')+'</span><span class="mbar"><i style="width:'+pct+'%;background:'+sc[0]+'"></i></span><span class="msc">'+(m.score!=null?m.score.toFixed(2):'—')+'</span>';
+      mz.appendChild(row); });
+    el('minuta').innerHTML=c.minuta_html||'<p style="color:#8a9aab">Sem minuta para este caso.</p>';
+    renderGraph(c);
     ticks.innerHTML='';
-    c.steps.forEach(function(st,i){
-      var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
-      r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+st.date+'</span><span class="tev">'+st.ev+'</span></span>';
-      r.onclick=function(){scrub.value=i;renderStep();};
-      ticks.appendChild(r);
-    });
-    sel.value=active;
-    renderStep();
+    (c.ticks||[]).forEach(function(t,i){ var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
+      r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+esc(t.date||('#'+(i+1)))+'</span><span class="tev">'+esc(t.label)+'</span></span>';
+      r.onclick=function(){scrub.value=i;renderReveal();}; ticks.appendChild(r); });
+    scrub.max=Math.max(0,((c.ticks||[]).length)-1); scrub.value=scrub.max;
+    sel.value=active; renderReveal();
   }
-  scrub.addEventListener('input',renderStep);
+  scrub.addEventListener('input',renderReveal);
   var btn=el('btn-llm');
-  if(btn) btn.onclick=function(){
-    var cmd='py main.py --daemon --llm';
+  if(btn) btn.onclick=function(){ var cmd='py main.py --daemon --llm';
     try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
-    el('llm-hint').textContent='Comando copiado: '+cmd+'  (requer ANTHROPIC_API_KEY; extrai doação cruzada, usufruto e cascata via Claude; fallback determinístico).';
-  };
+    el('llm-hint').textContent='Comando copiado: '+cmd+'  (requer ANTHROPIC_API_KEY; extrai doação cruzada, usufruto e cascata via Claude; fallback determinístico).'; };
   renderCase();
 """
 

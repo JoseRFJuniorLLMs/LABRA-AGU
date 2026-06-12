@@ -88,9 +88,10 @@ class TheoryBuilder:
                       "consilium fraudis, com cadeia de custódia por ULID.")
         return " ".join(partes)
 
-    def _detection(self):
-        """Grafo AS OF + achados agrupados por devedor (uma só passagem)."""
-        g = self.timeline.at_lsn(self.timeline.head())
+    def _detection(self, graph=None):
+        """Grafo AS OF + achados agrupados por devedor (uma só passagem).
+        `graph` opcional reusa um CaseGraph já reconstruído."""
+        g = graph if graph is not None else self.timeline.at_lsn(self.timeline.head())
         por_dev = defaultdict(list)
         for a in self._detect(g):
             por_dev[a["devedor_alvo"]].append(a)
@@ -123,8 +124,8 @@ class TheoryBuilder:
             nexo_causal=causal, provas_essenciais=essenciais,
             reincidencia=reincidencia, minuta=minuta)
 
-    def build(self, devedor: Optional[str] = None) -> Optional[TheoryOfCase]:
-        g, por_dev = self._detection()
+    def build(self, devedor: Optional[str] = None, graph=None) -> Optional[TheoryOfCase]:
+        g, por_dev = self._detection(graph)
         if not por_dev:
             return None
         if devedor is None:  # alvo principal: mais achados, depois mais grave
@@ -134,10 +135,10 @@ class TheoryBuilder:
         self.memory.load()
         return self._assemble(g, por_dev, anomalias, devedor)
 
-    def build_all(self) -> List[TheoryOfCase]:
+    def build_all(self, graph=None) -> List[TheoryOfCase]:
         """Uma teoria por devedor — reusa um único grafo, detecção, cálculo de
         anomalias e carga de memória (O(grafo) + por-caso leve)."""
-        g, por_dev = self._detection()
+        g, por_dev = self._detection(graph)
         if not por_dev:
             return []
         anomalias = AnomalyEngine(g).detect_all()
