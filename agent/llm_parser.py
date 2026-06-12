@@ -35,10 +35,16 @@ _SYSTEM = """Você é um perito forense da Advocacia-Geral da União especializa
 em rastreamento de blindagem patrimonial. Extraia de documentos jurídicos \
 (juntas comerciais, cartórios, COAF, extratos) APENAS fatos explícitos, sem \
 inferir. Normalize identificadores como aparecem (CPF_xxx, CNPJ_xxx ou só os \
-dígitos). Tipos de relação válidos: VENDEDOR_QUOTAS (cessão/transferência de \
-quotas), PROCURADOR_COM_PODERES (procuração/administração com plenos poderes), \
-FAMILIAR (vínculo de parentesco). Datas no formato ISO yyyy-mm-dd. Marcos \
-judiciais = datas ISO de penhora, citação, bloqueio, arresto, indisponibilidade."""
+dígitos). Tipos de relação válidos:
+  - VENDEDOR_QUOTAS: cessão/transferência de quotas;
+  - PROCURADOR_COM_PODERES: procuração/administração com plenos poderes;
+  - FAMILIAR: vínculo de parentesco;
+  - DOACAO: doação ou transmissão gratuita de bem (X doou para Y);
+  - ADMINISTRA: usufruto ou administração vitalícia de bem/empresa sem \
+titularidade aparente (X é usufrutuário/administrador vitalício de Y);
+  - CONTROLA: controle indireto em camadas / offshore em cascata (X controla Y).
+Datas no formato ISO yyyy-mm-dd. Marcos judiciais = datas ISO de penhora, \
+citação, bloqueio, arresto, indisponibilidade."""
 
 
 # Schema que o LLM preenche (sem source_event_id — esse é do log, não do texto)
@@ -52,7 +58,8 @@ class _LLMRelation(BaseModel):
     source_id: str
     target_id: str
     relation_type: str = Field(
-        ..., description="VENDEDOR_QUOTAS | PROCURADOR_COM_PODERES | FAMILIAR"
+        ..., description="VENDEDOR_QUOTAS | PROCURADOR_COM_PODERES | FAMILIAR | "
+                         "DOACAO | ADMINISTRA | CONTROLA"
     )
     value: Optional[float] = None
     date: Optional[str] = Field(None, description="ISO yyyy-mm-dd")

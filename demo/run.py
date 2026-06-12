@@ -13,6 +13,7 @@ Uso:
   python demo/run.py --target host:porta
 """
 import argparse
+import html as _html
 import json
 import os
 import re
@@ -38,6 +39,45 @@ from agent.testing import temp_server, server_bin
 from gerar_cenario import construir  # noqa: E402  (após o sys.path)
 from nomes import nome_de  # noqa: E402
 from agent.entities import normalize_id  # noqa: E402
+from agent.theory_builder import TheoryBuilder  # noqa: E402
+
+
+def _md_to_html(md: str) -> str:
+    """Conversor Markdown→HTML mínimo (a minuta tem estrutura conhecida)."""
+    def inline(s):
+        s = _html.escape(s)
+        s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+        s = re.sub(r"`(.+?)`", r"<code>\1</code>", s)
+        s = re.sub(r"\*(.+?)\*", r"<i>\1</i>", s)
+        return s
+    out, in_list = [], False
+
+    def close():
+        nonlocal in_list
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+    for ln in md.split("\n"):
+        t = ln.strip()
+        if not t:
+            close()
+            continue
+        if t.startswith("### "):
+            close(); out.append(f"<h5>{inline(t[4:])}</h5>")
+        elif t.startswith("## "):
+            close(); out.append(f"<h4>{inline(t[3:])}</h4>")
+        elif t.startswith("# "):
+            close(); out.append(f"<h3>{inline(t[2:])}</h3>")
+        elif t.startswith("- "):
+            if not in_list:
+                out.append("<ul>"); in_list = True
+            out.append(f"<li>{inline(t[2:])}</li>")
+        elif t.startswith("> "):
+            close(); out.append(f"<blockquote>{inline(t[2:])}</blockquote>")
+        else:
+            close(); out.append(f"<p>{inline(t)}</p>")
+    close()
+    return "\n".join(out)
 
 _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
 _ORDEM = ["triangulacao_offshore", "vespera_constricao",
@@ -232,6 +272,12 @@ def run(target, keep=False):
         return sorted(set(labs)), len(prov)
 
     cotas_map = _cotas_map(paths["junta"])
+    # Teoria do Caso por devedor (Fase 2): minuta jurídica + matriz de evidências.
+    try:
+        teorias = {t.devedor: t for t in TheoryBuilder(client).build_all()}
+    except Exception as e:  # noqa: BLE001 — o painel não depende disto
+        print(f"  (teoria do caso indisponível: {e})")
+        teorias = {}
     cases = []
     for dev in sorted(cases_map):
         tipos = cases_map[dev]
@@ -255,11 +301,17 @@ def run(target, keep=False):
         cotas = cotas_map.get(dev_c)
         lbl_venda = (f"{cotas:,}".replace(",", ".") + " cotas") if cotas else "venda de quotas"
         lbl_frac = (f"{count}× {valor}") if valor != "—" else "fracionamento"
+        teo = teorias.get(dev_c)
+        minuta_html = _md_to_html(teo.minuta) if teo else ""
+        matriz = ([{"tipo": a["pattern"], "sev": a["severidade"],
+                    "score": a["evidence_score"]} for a in teo.matriz_evidencias]
+                  if teo else [])
         cases.append({"dev": dev_l, "off": off_l, "lar": lar_l,
                       "dev_n": dev_n, "off_n": off_n, "lar_n": lar_n,
                       "valor": valor,
                       "lbl_venda": lbl_venda, "lbl_proc": "plenos poderes",
                       "lbl_frac": lbl_frac, "lbl_fam": "cunhado (familiar)",
+                      "minuta_html": minuta_html, "matriz": matriz,
                       "alerts": alerts, "steps": _steps_for(tipos)})
         print(f"  Caso · {dev_n} ({dev_l}): {len(alerts)} fraude(s) "
               f"[{', '.join(a['tipo'] for a in alerts)}]")

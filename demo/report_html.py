@@ -65,6 +65,23 @@ _CSS = """<style>
   .prov{font-size:.74rem;color:#1351B4;margin-top:10px;border-top:1px dashed #D8E0EA;padding-top:8px;}
   .note{margin-top:26px;background:#fff;border:1px solid #D8E0EA;border-left:4px solid #1351B4;border-radius:0 12px 12px 0;padding:16px 18px;font-size:.8rem;color:#1B2B40;}
   .note b{color:#0C326F;}
+  .teoria-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 14px;}
+  .llm-btn{font-size:.82rem;padding:8px 14px;border-radius:8px;border:1px solid #1351B4;background:#1351B4;color:#fff;cursor:pointer;}
+  .llm-btn:hover{background:#0C326F;}
+  .llm-hint{font-size:.74rem;color:#5B6B7B;}
+  .matriz{display:flex;flex-direction:column;gap:7px;margin-bottom:16px;}
+  .mrow{display:flex;align-items:center;gap:10px;font-size:.82rem;}
+  .mrow .mt{width:210px;flex:none;}
+  .mbar{flex:1;height:14px;background:#EEF2F7;border-radius:7px;overflow:hidden;border:1px solid #D8E0EA;}
+  .mbar i{display:block;height:100%;border-radius:7px;}
+  .mrow .msc{width:42px;text-align:right;font-variant-numeric:tabular-nums;color:#5B6B7B;}
+  .minuta{background:#fff;border:1px solid #D8E0EA;border-radius:12px;padding:18px 22px;max-height:540px;overflow:auto;font-size:.85rem;line-height:1.6;}
+  .minuta h3{font-size:1.05rem;color:#0C326F;margin:.2rem 0 .6rem;}
+  .minuta h4{font-size:.95rem;color:#0C326F;border-bottom:1px solid #D8E0EA;padding-bottom:4px;margin:1.1rem 0 .5rem;}
+  .minuta h5{font-size:.85rem;color:#1B2B40;margin:.8rem 0 .3rem;}
+  .minuta code{background:#EEF2F7;padding:1px 5px;border-radius:4px;}
+  .minuta blockquote{border-left:3px solid #1351B4;margin:.6rem 0;padding:6px 12px;background:#F7F9FC;color:#5B6B7B;font-size:.8rem;}
+  .minuta ul{margin:.3rem 0 .6rem;padding-left:20px;} .minuta li{margin:3px 0;} .minuta p{margin:.4rem 0;}
 </style>"""
 
 _HTML = """<body>
@@ -122,6 +139,14 @@ _HTML = """<body>
 
   <h2>Alertas de Fraude — Detalhe (do caso selecionado)</h2>
   <div class="cards" id="cards"></div>
+
+  <h2>Teoria do Caso — matriz de evidências e minuta</h2>
+  <div class="teoria-bar">
+    <button id="btn-llm" class="llm-btn">Reanalisar esquemas novos (LLM)</button>
+    <span class="llm-hint" id="llm-hint">Copia o comando para reprocessar com Claude — doação cruzada, usufruto/holding e offshore em cascata — com fallback determinístico.</span>
+  </div>
+  <div class="matriz" id="matriz"></div>
+  <div class="minuta" id="minuta"></div>
 
   <div class="note">
     <b>Cadeia de custódia:</b> cada alerta aponta, por <b>ULID real</b>, para os eventos-fonte
@@ -192,6 +217,16 @@ _JS = """
     el('l_venda').textContent=c.lbl_venda; el('l_proc').textContent=c.lbl_proc;
     el('l_frac').textContent=c.lbl_frac; el('l_fam').textContent=c.lbl_fam;
     var box=el('cards'); box.innerHTML=''; c.alerts.forEach(function(a){box.appendChild(card(a));});
+    var mz=el('matriz'); mz.innerHTML='';
+    (c.matriz||[]).forEach(function(m){
+      var sc=sev(m.sev), pct=Math.round((m.score||0)*100);
+      var row=document.createElement('div'); row.className='mrow';
+      row.innerHTML='<span class="mt">'+m.tipo.replace(/_/g,' ')+'</span>'
+        +'<span class="mbar"><i style="width:'+pct+'%;background:'+sc[0]+'"></i></span>'
+        +'<span class="msc">'+(m.score!=null?m.score.toFixed(2):'—')+'</span>';
+      mz.appendChild(row);
+    });
+    el('minuta').innerHTML = c.minuta_html || '<p style="color:#8a9aab">Sem minuta para este caso.</p>';
     scrub.max=c.steps.length-1; scrub.value=c.steps.length-1;
     ticks.innerHTML='';
     c.steps.forEach(function(st,i){
@@ -204,6 +239,12 @@ _JS = """
     renderStep();
   }
   scrub.addEventListener('input',renderStep);
+  var btn=el('btn-llm');
+  if(btn) btn.onclick=function(){
+    var cmd='py main.py --daemon --llm';
+    try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
+    el('llm-hint').textContent='Comando copiado: '+cmd+'  (requer ANTHROPIC_API_KEY; extrai doação cruzada, usufruto e cascata via Claude; fallback determinístico).';
+  };
   renderCase();
 """
 

@@ -88,38 +88,28 @@ class TheoryBuilder:
                       "consilium fraudis, com cadeia de custódia por ULID.")
         return " ".join(partes)
 
-    def build(self, devedor: Optional[str] = None) -> Optional[TheoryOfCase]:
+    def _detection(self):
+        """Grafo AS OF + achados agrupados por devedor (uma só passagem)."""
         g = self.timeline.at_lsn(self.timeline.head())
-        achados = self._detect(g)
-        if not achados:
-            return None
-
         por_dev = defaultdict(list)
-        for a in achados:
+        for a in self._detect(g):
             por_dev[a["devedor_alvo"]].append(a)
-        if devedor is None:  # alvo principal: mais achados, depois mais grave
-            devedor = max(por_dev, key=lambda d: (
-                len(por_dev[d]), sum(_SEVW.get(x["severidade"], 0) for x in por_dev[d])))
+        return g, por_dev
+
+    def _assemble(self, g, por_dev, anomalias, devedor) -> Optional[TheoryOfCase]:
+        """Monta a TheoryOfCase de um devedor sobre um grafo já reconstruído."""
         case = sorted(por_dev.get(devedor, []),
                       key=lambda a: a["evidence_score"], reverse=True)
         if not case:
             return None
-
-        # nexo causal + provas essenciais (devedor -> laranja, se houver)
         causal = CausalChainBuilder(g).narrative(devedor)
         sink = next((a["envolvidos"][2] for a in case
                      if a["pattern"] == "triangulacao_offshore"
                      and len(a["envolvidos"]) >= 3), None)
         essenciais = (CounterfactualEngine(g).essential_ulids(devedor, sink)
                       if sink else [])
-
-        # anomalias (indutivo) + memória cross-case
-        anomalias = AnomalyEngine(g).detect_all()
-        self.memory.load()
         alvos = sorted({e for a in case for e in a["envolvidos"]})
         reincidencia = self.memory.check_new_case(alvos, devedor=devedor)
-
-        # síntese
         nome = g.entities.get(devedor, devedor)
         patterns = list(dict.fromkeys(a["pattern"] for a in case))
         valor = next((a.get("_valor") for a in case if a.get("_valor")), None)
@@ -127,15 +117,30 @@ class TheoryBuilder:
         minuta = self.litigator.minuta(
             devedor=devedor, devedor_nome=nome, achados=case,
             causal=causal, essenciais=essenciais)
-
         return TheoryOfCase(
             devedor=devedor, devedor_nome=nome, narrativa=narrativa,
             alvos=alvos, matriz_evidencias=case, anomalias=anomalias,
             nexo_causal=causal, provas_essenciais=essenciais,
             reincidencia=reincidencia, minuta=minuta)
 
+    def build(self, devedor: Optional[str] = None) -> Optional[TheoryOfCase]:
+        g, por_dev = self._detection()
+        if not por_dev:
+            return None
+        if devedor is None:  # alvo principal: mais achados, depois mais grave
+            devedor = max(por_dev, key=lambda d: (
+                len(por_dev[d]), sum(_SEVW.get(x["severidade"], 0) for x in por_dev[d])))
+        anomalias = AnomalyEngine(g).detect_all()
+        self.memory.load()
+        return self._assemble(g, por_dev, anomalias, devedor)
+
     def build_all(self) -> List[TheoryOfCase]:
-        """Uma teoria por devedor detectado."""
-        g = self.timeline.at_lsn(self.timeline.head())
-        devedores = sorted({a["devedor_alvo"] for a in self._detect(g)})
-        return [t for t in (self.build(d) for d in devedores) if t]
+        """Uma teoria por devedor — reusa um único grafo, detecção, cálculo de
+        anomalias e carga de memória (O(grafo) + por-caso leve)."""
+        g, por_dev = self._detection()
+        if not por_dev:
+            return []
+        anomalias = AnomalyEngine(g).detect_all()
+        self.memory.load()
+        return [t for t in (self._assemble(g, por_dev, anomalias, d)
+                            for d in sorted(por_dev)) if t]
