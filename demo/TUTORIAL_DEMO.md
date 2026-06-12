@@ -106,6 +106,29 @@ dele. Os números (casos, fraudes, críticas) refletem o total real detectado.
 > determinístico) — ideal para a demo principal. Use `--keep` para mostrar que
 > o sistema escala para muitos casos.
 
+### 4a-bis. Casos COMPLEXOS — esquemas avançados (Fase 2)
+
+Para impressionar com esquemas sofisticados (não só a triangulação base), gere
+casos que disparam as heurísticas avançadas — **doação cruzada**,
+**holding/usufruto** e **offshore em cascata**:
+
+```powershell
+py demo\gerar_complexos.py --n 6     # 6 casos complexos (limpa demo_data)
+py demo\run.py --keep                # detecta e abre o painel
+```
+
+Cada caso é um **superconjunto**: a triangulação base (que renderiza no grafo)
+**+** esquemas avançados declarados no documento de vínculos. Os perfis variam
+(`completo` · `cascata` · `doacao_holding`), então o seletor mostra casos com
+**4 a 7 esquemas** cada. No painel, o caso complexo aparece inteiro: os cartões
+de alerta (todos os tipos), a **matriz de evidências** com a força probatória,
+e a **minuta** a citar os dispositivos novos (CC 158 — fraude contra credores;
+Lei 9.613/98 — cascata; CC 50 — holding).
+
+> Os esquemas avançados só disparam porque o `asset_shield` está registado no
+> catálogo do agente. Frases-gatilho: "X **doou** ... para Y" (doação),
+> "X é **usufrutuário vitalício** de Y" (holding), "X **controla** Y" (cascata).
+
 ### 4b. O contrato — onde e como inserir à mão
 
 | Fonte | Banco / pasta | Tabela | Colunas (exatas) | Frase que o agente reconhece |
