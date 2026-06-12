@@ -83,6 +83,11 @@ _CSS = """<style>
   .minuta blockquote{border-left:3px solid #1351B4;margin:.6rem 0;padding:6px 12px;background:#F7F9FC;color:#5B6B7B;font-size:.8rem;}
   .minuta ul{margin:.3rem 0 .6rem;padding-left:20px;} .minuta li{margin:3px 0;} .minuta p{margin:.4rem 0;}
   .netg{height:380px;background:#fff;border-radius:8px;}
+  .graphbox{position:relative;}
+  .fs-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid #D8E0EA;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;color:#0C326F;}
+  .fs-btn:hover{background:#F7F9FC;}
+  .graphbox.fs{position:fixed;inset:0;z-index:200;background:#fff;padding:10px;border-radius:0;}
+  .graphbox.fs .netg{height:calc(100vh - 20px);}
   #tip{position:fixed;z-index:60;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
   #tip b{color:#0C326F;}
 </style>"""
@@ -118,7 +123,10 @@ _HTML = """<body>
   <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
   <div class="stage">
     <div class="panel">
-      <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
+      <div id="graphbox" class="graphbox">
+        <button id="fs-btn" class="fs-btn" title="Tela cheia">⛶ Tela cheia</button>
+        <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
+      </div>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
     <div class="scrubber">
@@ -226,6 +234,10 @@ _JS = """
     sel.value=active; renderReveal();
   }
   scrub.addEventListener('input',renderReveal);
+  var gbox=el('graphbox'), fsbtn=el('fs-btn');
+  function fsApply(){ var on=gbox.classList.contains('fs'); fsbtn.textContent=on?'✕ Voltar':'⛶ Tela cheia'; if(net){ setTimeout(function(){ try{ net.redraw(); net.fit(); }catch(e){} },70); } }
+  if(fsbtn) fsbtn.onclick=function(){ gbox.classList.toggle('fs'); fsApply(); };
+  document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && gbox.classList.contains('fs')){ gbox.classList.remove('fs'); fsApply(); } });
   var btn=el('btn-llm');
   if(btn) btn.onclick=function(){ var cmd='py main.py --daemon --llm';
     try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
