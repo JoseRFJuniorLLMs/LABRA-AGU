@@ -55,71 +55,47 @@ def extract_text_from_file(file_path: str) -> str:
         logging.error(f"Erro ao extrair texto de {file_path}: {e}")
         return ""
 
+# Cache do modelo Whisper (carregar uma vez por processo é caro).
+_WHISPER_CACHE = {}
+
+
+def _whisper_model(size: str):
+    if size not in _WHISPER_CACHE:
+        from faster_whisper import WhisperModel
+        # CPU int8 por defeito (corre em qualquer máquina); device/compute
+        # configuráveis por env para acelerar em GPU quando disponível.
+        device = os.environ.get("LABRA_WHISPER_DEVICE", "cpu")
+        compute = os.environ.get("LABRA_WHISPER_COMPUTE", "int8")
+        _WHISPER_CACHE[size] = WhisperModel(size, device=device, compute_type=compute)
+    return _WHISPER_CACHE[size]
+
+
 def _extract_audio_text(file_path: str, ext: str) -> str:
-    import speech_recognition as sr
-    
-    # Se for video, extrair audio primeiro
-    if ext in ['mp4', 'avi']:
-        try:
-            from moviepy.editor import VideoFileClip
-            logging.info(f"Extraindo áudio do vídeo {file_path}")
-            video = VideoFileClip(file_path)
-            
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
-                temp_audio_path = temp_audio.name
-                
-            video.audio.write_audiofile(temp_audio_path, logger=None)
-            video.close()
-            
-            result = _extract_audio_text(temp_audio_path, 'wav')
-            os.remove(temp_audio_path)
-            return result
-        except ImportError:
-            logging.error("Biblioteca moviepy não instalada. Instale para suporte a vídeos.")
-            return ""
-        except Exception as e:
-            logging.error(f"Erro ao extrair áudio de vídeo: {e}")
-            return ""
-            
-    elif ext == 'mp3':
-        try:
-            from pydub import AudioSegment
-            logging.info(f"Convertendo {file_path} de MP3 para WAV")
-            audio = AudioSegment.from_mp3(file_path)
-            
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
-                temp_wav_path = temp_wav.name
-                
-            audio.export(temp_wav_path, format="wav")
-            
-            result = _extract_audio_text(temp_wav_path, 'wav')
-            os.remove(temp_wav_path)
-            return result
-        except ImportError:
-            logging.error("Biblioteca pydub não instalada. Instale para suporte a MP3.")
-            return ""
-        except Exception as e:
-            logging.error(f"Erro ao converter MP3: {e}")
-            return ""
-            
-    elif ext == 'wav':
-        logging.info(f"Transcrevendo áudio {file_path}")
-        recognizer = sr.Recognizer()
-        try:
-            with sr.AudioFile(file_path) as source:
-                audio_data = recognizer.record(source)
-                # Utiliza o Google Web Speech API como fallback offline genérico/fácil
-                # Obs: Em produção, usar Whisper ou uma API melhor
-                text = recognizer.recognize_google(audio_data, language="pt-BR")
-                return text
-        except sr.UnknownValueError:
-            logging.warning("SpeechRecognition não conseguiu entender o áudio.")
-            return ""
-        except sr.RequestError as e:
-            logging.error(f"Erro no serviço do SpeechRecognition: {e}")
-            return ""
-        except Exception as e:
-            logging.error(f"Erro ao transcrever arquivo WAV: {e}")
-            return ""
-            
-    return ""
+    """
+    Transcrição de áudio/vídeo 100% LOCAL via faster-whisper.
+
+    REGRA DE PRIVACIDADE (LGPD / sigilo): dado de processo — escutas,
+    depoimentos, audiências — NUNCA sai da máquina. Não há chamada a serviço
+    externo (a versão anterior enviava o áudio para a Google Web Speech API).
+    O faster-whisper decodifica mp3/wav/mp4/avi diretamente (via ffmpeg), logo
+    não é preciso converter formatos à mão.
+
+    Configurável por env:
+      LABRA_WHISPER_MODEL   (tiny|base|small|medium|large-v3; default 'small')
+      LABRA_WHISPER_DEVICE  (cpu|cuda; default 'cpu')
+      LABRA_WHISPER_COMPUTE (int8|int8_float16|float16; default 'int8')
+    """
+    try:
+        model = _whisper_model(os.environ.get("LABRA_WHISPER_MODEL", "small"))
+    except ImportError:
+        logging.error(
+            "faster-whisper não instalado — transcrição local indisponível. "
+            "Instale: pip install faster-whisper")
+        return ""
+    try:
+        logging.info(f"Transcrevendo localmente (Whisper): {file_path}")
+        segments, _info = model.transcribe(file_path, language="pt", vad_filter=True)
+        return " ".join(seg.text.strip() for seg in segments).strip()
+    except Exception as e:
+        logging.error(f"Erro na transcrição local de {file_path}: {e}")
+        return ""

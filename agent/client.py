@@ -1,5 +1,7 @@
 import datetime
 import json
+import logging
+import os
 import re
 
 import grpc
@@ -20,16 +22,28 @@ def is_ulid(value: str) -> bool:
 
 
 class HeraclitusClient:
-    def __init__(self, target="localhost:7474", tls: bool = False,
-                 ca_cert: str | None = None):
+    def __init__(self, target: str | None = None, tls: bool | None = None,
+                 ca_cert: str | None = None, token: str | None = None):
         """
         Conexão gRPC ao HeraclitusDB.
 
-        Produção (AGU/INSS): use TLS. `tls=True` abre um canal seguro; se
-        `ca_cert` for dado, valida o servidor contra essa CA (cert PEM).
-        Sem TLS, o canal é inseguro — aceitável apenas em desenvolvimento
-        local, pois trafega CPF e dados financeiros sensíveis (LGPD).
+        Produção (AGU/INSS): trafega CPF e dados financeiros sob sigilo (LGPD),
+        logo TLS + autenticação deviam ser OBRIGATÓRIOS. Configurável por env
+        para ativar em produção sem tocar no código:
+          HERACLITUS_ADDR     (default localhost:7474)
+          HERACLITUS_TLS      (1/true → canal seguro)
+          HERACLITUS_CA_CERT  (PEM da CA que valida o servidor)
+          HERACLITUS_TOKEN    (bearer token → metadata 'authorization')
+
+        `tls`/`token` explícitos têm precedência sobre o env. Sem TLS o canal é
+        inseguro — aceitável apenas em desenvolvimento local (loopback).
         """
+        target = target or os.environ.get("HERACLITUS_ADDR", "localhost:7474")
+        if tls is None:
+            tls = os.environ.get("HERACLITUS_TLS", "").lower() in ("1", "true", "yes")
+        ca_cert = ca_cert or os.environ.get("HERACLITUS_CA_CERT")
+        token = token or os.environ.get("HERACLITUS_TOKEN")
+
         if tls:
             creds_kwargs = {}
             if ca_cert:
@@ -39,21 +53,34 @@ class HeraclitusClient:
             self.channel = grpc.secure_channel(target, creds)
         else:
             self.channel = grpc.insecure_channel(target)
+
+        # Autenticação por bearer token (metadata em cada chamada). Nunca enviar
+        # credenciais em claro: se há token mas o canal é inseguro, avisa.
+        self._md = [("authorization", f"Bearer {token}")] if token else None
+        if token and not tls:
+            logging.warning("HERACLITUS_TOKEN definido sobre canal SEM TLS — "
+                            "o token viaja em claro. Ative HERACLITUS_TLS em produção.")
+
         try:
             self.stub = heraclitus_pb2_grpc.HeraclitusStub(self.channel)
-        except NameError:
-            self.stub = None
+        except NameError as e:
+            raise RuntimeError(
+                "Stubs gRPC do HeraclitusDB ausentes — gere-os com `py build.py` "
+                "(grpcio-tools) antes de usar o cliente."
+            ) from e
 
     def subscribe(self, from_lsn=0):
         req = heraclitus_pb2.SubscribeRequest(from_lsn=from_lsn)
-        return self.stub.Subscribe(req)
+        return self.stub.Subscribe(req, metadata=self._md)
 
     def snapshot(self) -> int:
-        return self.stub.Snapshot(heraclitus_pb2.SnapshotRequest()).lsn
+        return self.stub.Snapshot(heraclitus_pb2.SnapshotRequest(),
+                                  metadata=self._md).lsn
 
     def query(self, gql: str):
         """Executa GQL (MATCH/RECALL/NEAREST/PROVENANCE/EXPLAIN/AS OF)."""
-        resp = self.stub.Query(heraclitus_pb2.QueryRequest(gql=gql))
+        resp = self.stub.Query(heraclitus_pb2.QueryRequest(gql=gql),
+                               metadata=self._md)
         return json.loads(resp.json)
 
     def query_auditada(self, gql: str, autor: str, motivo: str = ""):
@@ -72,7 +99,7 @@ class HeraclitusClient:
                  "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()},
                 ensure_ascii=False).encode("utf-8"),
             attrs={"generated_by": "labra_audit", "autor": autor},
-        ))
+        ), metadata=self._md)
         return self.query(gql)
 
     def iter_log(self, from_lsn: int = 0):
@@ -100,7 +127,7 @@ class HeraclitusClient:
             attrs={"generated_by": "labra_agent", "role": "documento_fonte",
                    **(attrs or {})},
         )
-        return self.stub.Append(req).lsn
+        return self.stub.Append(req, metadata=self._md).lsn
 
     def resolve_event_id(self, lsn: int) -> str:
         """
@@ -132,7 +159,7 @@ class HeraclitusClient:
             parents=parents,
             attrs=attrs,
         )
-        return self.stub.Append(req).lsn
+        return self.stub.Append(req, metadata=self._md).lsn
 
     def provenance(self, event_id: str):
         """Cadeia de custódia inversa: de onde veio este insight?"""
@@ -154,4 +181,4 @@ class HeraclitusClient:
             content=json.dumps(body, ensure_ascii=False).encode("utf-8"),
             attrs={"generated_by": "labra_directive_cli"},
         )
-        return self.stub.Append(req).lsn
+        return self.stub.Append(req, metadata=self._md).lsn

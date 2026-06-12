@@ -97,10 +97,9 @@ class AgentDaemon:
                     text = ep.get("content", "")
                     if text.strip():
                         doc = self._parse(text, source_event_id=ep["id"])
-                        # acumula no grafo SEM emitir (reconstrução)
-                        touched = self.investigator.graph.ingest(doc)
-                        for cid in touched:
-                            self.investigator.memory.record_access(cid)
+                        # acumula no grafo SEM emitir (reconstrução); o relógio
+                        # lógico avança aqui exatamente como no caminho ao vivo
+                        self.investigator.ingest_only(doc)
                 elif "INSIGHT_PERICIAL_FRAUDE" in kind:
                     # marca a assinatura como já emitida (dedup do log)
                     from .investigator import signature
@@ -158,6 +157,13 @@ class AgentDaemon:
                 if text.strip():
                     self.metrics["documents"] += 1
                     doc = self._parse(text, source_event_id=ep["id"])
+                    if getattr(doc, "needs_review", False):
+                        self.metrics["low_confidence"] = \
+                            self.metrics.get("low_confidence", 0) + 1
+                        logging.warning(
+                            f"extração de baixa confiança (LSN={lsn}, "
+                            f"conf={getattr(doc, 'confidence', '?')}) — "
+                            "candidato a revisão humana / parser LLM")
                     for insight in self.investigator.process_document(doc):
                         self._emit(insight)
         except Exception as e:  # noqa: BLE001 — um doc ruim não derruba o daemon

@@ -59,13 +59,22 @@ class Investigator:
         self.directives: List[Directive] = []
         # assinaturas (padrão, frozenset(envolvidos)) já emitidas — dedup
         self._emitted: Set[Tuple[str, frozenset]] = set()
+        # Relógio LÓGICO: incrementa uma vez por evento absorvido (documento
+        # ou diretriz), na ordem do log. É este tick — não o wall-clock — que
+        # alimenta o ACT-R, tornando a ativação reproduzível em qualquer replay.
+        self._clock = 0
+
+    def _advance(self) -> int:
+        self._clock += 1
+        return self._clock
 
     # ── Diretrizes ────────────────────────────────────────────────────
     def register_directive(self, directive: Directive):
         """Acolhe uma ordem: alvos ganham boost imediato de ativação."""
         self.directives.append(directive)
+        tick = self._advance()
         for alvo in directive.alvos:
-            self.memory.boost(alvo, directive.boost)
+            self.memory.boost(alvo, tick, directive.boost)
 
     def _active_patterns(self) -> List[str]:
         """Se alguma diretriz restringe padrões, a união delas manda;
@@ -82,6 +91,17 @@ class Investigator:
                 hits.append(d)
         return hits
 
+    # ── ingestão (partilhada por reconstrução e ao vivo) ──────────────
+    def ingest_only(self, doc: ParsedDocument) -> Set[str]:
+        """Funde o documento no grafo e regista os acessos ACT-R no tick lógico
+        atual — SEM correr padrões nem emitir. Usado na reconstrução do daemon,
+        para que o relógio lógico avance de forma idêntica ao caminho ao vivo."""
+        touched = self.graph.ingest(doc)
+        tick = self._advance()
+        for cid in touched:
+            self.memory.record_access(cid, tick)
+        return touched
+
     # ── Pipeline por documento ────────────────────────────────────────
     def process_document(self, doc: ParsedDocument) -> List[dict]:
         """
@@ -89,9 +109,7 @@ class Investigator:
         grafo consolidado. Devolve apenas insights NOVOS (deduplicados).
         """
         # 1. Acumula no grafo (resolve entidades) e regista acessos ACT-R
-        touched = self.graph.ingest(doc)
-        for cid in touched:
-            self.memory.record_access(cid)
+        self.ingest_only(doc)
 
         # 2. Padrões sobre o grafo inteiro
         insights: List[dict] = []
@@ -117,7 +135,8 @@ class Investigator:
         # Ativações ACT-R reais (não números decorativos): o ranking que o
         # filtro sub-simbólico atribui a cada envolvido neste instante.
         ativacoes: Dict[str, float] = {
-            e: round(self.memory.calculate_activation(e), 4) for e in envolvidos
+            e: round(self.memory.calculate_activation(e, self._clock), 4)
+            for e in envolvidos
         }
 
         payload = {

@@ -51,24 +51,34 @@ class CaseMemory:
         self.cases: Dict[str, CaseSignature] = {}
 
     # ── carga a partir do log (assinaturas persistidas como insights) ──
+    def _absorb_row(self, r: dict):
+        if "INSIGHT_PERICIAL_FRAUDE" not in r.get("kind", ""):
+            return
+        try:
+            p = json.loads(r.get("content", "{}"))
+        except (ValueError, TypeError):
+            return
+        dev = p.get("devedor_alvo")
+        if not dev:
+            return
+        sig = self.cases.get(dev) or self.cases.setdefault(dev, CaseSignature(dev))
+        sig.entities.update(p.get("envolvidos", []))
+        sig.patterns.add(p.get("tipo_fraude", ""))
+        sig.insights += 1
+
     def load(self) -> "CaseMemory":
         self.cases.clear()
-        rows = self.client.query(
-            'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
+        for r in self.client.query(
+                'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n'):
+            self._absorb_row(r)
+        return self
+
+    def load_from_rows(self, rows) -> "CaseMemory":
+        """Carga sem ir ao servidor: reusa linhas já buscadas (uma só leitura
+        do log partilhada por todo o build da Teoria do Caso)."""
+        self.cases.clear()
         for r in rows:
-            if "INSIGHT_PERICIAL_FRAUDE" not in r.get("kind", ""):
-                continue
-            try:
-                p = json.loads(r.get("content", "{}"))
-            except (ValueError, TypeError):
-                continue
-            dev = p.get("devedor_alvo")
-            if not dev:
-                continue
-            sig = self.cases.get(dev) or self.cases.setdefault(dev, CaseSignature(dev))
-            sig.entities.update(p.get("envolvidos", []))
-            sig.patterns.add(p.get("tipo_fraude", ""))
-            sig.insights += 1
+            self._absorb_row(r)
         return self
 
     # ── índice de atores ──────────────────────────────────────────────

@@ -8,12 +8,20 @@ módulo usa o Claude (SDK oficial da Anthropic) com saída estruturada para
 extrair entidades, relações e transações de texto arbitrário, devolvendo o
 MESMO schema Pydantic (`ParsedDocument`) — o resto do pipeline não muda.
 
-Ativação (opt-in, falha graciosamente para o determinístico):
-  - `pip install anthropic`
-  - `export ANTHROPIC_API_KEY=...`
-  - `export LABRA_LLM_PARSER=1`  (ou passar use_llm=True)
+Dois backends, selecionáveis por `LABRA_LLM_BACKEND`:
 
-Sem qualquer destes, o agente continua a usar o parser determinístico.
+  - `anthropic` (default) — Claude via SDK oficial. `pip install anthropic`,
+    `export ANTHROPIC_API_KEY=...`.
+  - `local` — qualquer servidor OpenAI-compatible (LM Studio, Ollama, vLLM…),
+    ideal para correr um modelo LOCAL (ex.: Gemma 4) sem que dados de processo
+    saiam da máquina (LGPD). `pip install openai` e:
+      export LABRA_LLM_BACKEND=local
+      export LABRA_LLM_BASE_URL=http://localhost:1234/v1   # LM Studio
+      export LABRA_LLM_MODEL=gemma-4-e4b
+      export LABRA_LLM_API_KEY=local                        # token fictício
+
+Qualquer falha (sem SDK, sem chave, servidor em baixo, recusa) degrada
+graciosamente para o parser DETERMINÍSTICO — o agente nunca fica sem análise.
 """
 import logging
 import os
@@ -29,7 +37,11 @@ from .parser import (
     parse_document as parse_deterministico,
 )
 
-_MODEL = os.environ.get("LABRA_LLM_MODEL", "claude-opus-4-8")
+_BACKEND = os.environ.get("LABRA_LLM_BACKEND", "anthropic").lower()
+_MODEL = os.environ.get(
+    "LABRA_LLM_MODEL",
+    "gemma-4-e4b" if _BACKEND == "local" else "claude-opus-4-8")
+_BASE_URL = os.environ.get("LABRA_LLM_BASE_URL", "http://localhost:1234/v1")
 
 _SYSTEM = """Você é um perito forense da Advocacia-Geral da União especializado \
 em rastreamento de blindagem patrimonial. Extraia de documentos jurídicos \
@@ -80,7 +92,14 @@ class _LLMExtraction(BaseModel):
 
 
 def llm_available() -> bool:
-    """True se o SDK e a chave estiverem presentes."""
+    """True se o backend selecionado tiver SDK e credenciais."""
+    if _BACKEND == "local":
+        try:
+            import openai  # noqa: F401
+            return True
+        except ImportError:
+            return False
+    # anthropic
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return False
     try:
@@ -90,49 +109,80 @@ def llm_available() -> bool:
         return False
 
 
+_USER_PROMPT = ("Extraia as entidades, relações, transações e marcos judiciais "
+                "deste documento:\n\n")
+
+
+def _to_parsed(ext: "_LLMExtraction", source_event_id: str) -> ParsedDocument:
+    """Converte a extração do LLM no schema do pipeline. Confiança alta: a
+    extração veio de um modelo, não dos gatilhos lexicais frágeis."""
+    return ParsedDocument(
+        entities=[Entity(id=e.id, name=e.name, type=e.type) for e in ext.entities],
+        relations=[
+            Relation(source_id=r.source_id, target_id=r.target_id,
+                     relation_type=r.relation_type, value=r.value, date=r.date)
+            for r in ext.relations
+        ],
+        transactions=[
+            Transaction(source_id=t.source_id, target_id=t.target_id,
+                        value=t.value, date=t.date)
+            for t in ext.transactions
+        ],
+        marcos_judiciais=list(ext.marcos_judiciais),
+        source_event_id=source_event_id,
+        confidence=1.0,
+        needs_review=False,
+    )
+
+
+def _parse_local(text: str, source_event_id: str) -> ParsedDocument:
+    """Servidor OpenAI-compatible (LM Studio/Ollama/vLLM) com structured output."""
+    from openai import OpenAI
+
+    client = OpenAI(base_url=_BASE_URL,
+                    api_key=os.environ.get("LABRA_LLM_API_KEY", "local"))
+    resp = client.beta.chat.completions.parse(
+        model=_MODEL,
+        messages=[{"role": "system", "content": _SYSTEM},
+                  {"role": "user", "content": _USER_PROMPT + text}],
+        response_format=_LLMExtraction,
+    )
+    ext = resp.choices[0].message.parsed
+    if ext is None:
+        raise ValueError("resposta sem parsed (possível recusa)")
+    return _to_parsed(ext, source_event_id)
+
+
+def _parse_anthropic(text: str, source_event_id: str) -> ParsedDocument:
+    import anthropic
+
+    client = anthropic.Anthropic()
+    resp = client.messages.parse(
+        model=_MODEL,
+        max_tokens=4096,
+        system=_SYSTEM,
+        messages=[{"role": "user", "content": _USER_PROMPT + text}],
+        output_format=_LLMExtraction,
+    )
+    ext = resp.parsed_output
+    if ext is None:
+        raise ValueError("parsed_output vazio (possível recusa)")
+    return _to_parsed(ext, source_event_id)
+
+
 def parse_document_llm(text: str, source_event_id: str) -> ParsedDocument:
     """
-    Extrai via Claude (saída estruturada). Em qualquer falha, cai para o
-    parser determinístico — o agente nunca fica sem análise.
+    Extrai via LLM (backend `LABRA_LLM_BACKEND`: anthropic|local), com saída
+    estruturada. Em QUALQUER falha cai para o parser determinístico — o agente
+    nunca fica sem análise.
     """
     if not llm_available():
         return parse_deterministico(text, source_event_id)
-
     try:
-        import anthropic
-
-        client = anthropic.Anthropic()
-        resp = client.messages.parse(
-            model=_MODEL,
-            max_tokens=4096,
-            system=_SYSTEM,
-            messages=[{
-                "role": "user",
-                "content": f"Extraia as entidades, relações, transações e "
-                           f"marcos judiciais deste documento:\n\n{text}",
-            }],
-            output_format=_LLMExtraction,
-        )
-        ext = resp.parsed_output
-        if ext is None:
-            raise ValueError("parsed_output vazio (possível recusa)")
-
-        return ParsedDocument(
-            entities=[Entity(id=e.id, name=e.name, type=e.type) for e in ext.entities],
-            relations=[
-                Relation(source_id=r.source_id, target_id=r.target_id,
-                         relation_type=r.relation_type, value=r.value, date=r.date)
-                for r in ext.relations
-            ],
-            transactions=[
-                Transaction(source_id=t.source_id, target_id=t.target_id,
-                            value=t.value, date=t.date)
-                for t in ext.transactions
-            ],
-            marcos_judiciais=list(ext.marcos_judiciais),
-            source_event_id=source_event_id,
-        )
+        if _BACKEND == "local":
+            return _parse_local(text, source_event_id)
+        return _parse_anthropic(text, source_event_id)
     except Exception as e:  # noqa: BLE001 — degrada para o determinístico
-        logging.warning(f"parser LLM falhou ({type(e).__name__}: {e}); "
-                        "usando parser determinístico")
+        logging.warning(f"parser LLM ({_BACKEND}) falhou ({type(e).__name__}: "
+                        f"{e}); usando parser determinístico")
         return parse_deterministico(text, source_event_id)

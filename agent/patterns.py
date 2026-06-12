@@ -17,6 +17,7 @@ Cada achado traz:
 
 Novos padrões = nova entrada no catálogo. Nada mais muda no pipeline.
 """
+from collections import defaultdict
 from datetime import date, timedelta
 from typing import Callable, Dict, List
 
@@ -33,33 +34,40 @@ def detect_triangulacao_offshore(g: CaseGraph) -> List[dict]:
     pernas podem vir de documentos/fontes diferentes."""
     out = []
     familiares = {(f["src"], f["dst"]) for f in g.rels("FAMILIAR")}
+    # Eventos-prova do vínculo familiar, indexados por (devedor, laranja).
+    fam_events: Dict[tuple, set] = defaultdict(set)
+    for f in g.rels("FAMILIAR"):
+        fam_events[(f["src"], f["dst"])] |= set(f["events"])
+    # Procurações indexadas pelo outorgante (src) — evita o produto cartesiano
+    # venda × procuração (O(V·P) → O(V+P)).
+    procs_by_src: Dict[str, List[dict]] = defaultdict(list)
+    for proc in g.rels("PROCURADOR_COM_PODERES"):
+        procs_by_src[proc["src"]].append(proc)
+
     for venda in g.rels("VENDEDOR_QUOTAS"):
-        for proc in g.rels("PROCURADOR_COM_PODERES"):
-            if proc["src"] == venda["dst"]:
-                devedor, offshore, laranja = venda["src"], venda["dst"], proc["dst"]
-                familiar = (devedor, laranja) in familiares
-                events = set(venda["events"]) | set(proc["events"])
-                if familiar:
-                    for f in g.rels("FAMILIAR"):
-                        if f["src"] == devedor and f["dst"] == laranja:
-                            events |= f["events"]
-                out.append({
-                    "pattern": "triangulacao_offshore",
-                    "severidade": "CRITICA" if familiar else "ALTA",
-                    "envolvidos": [devedor, offshore, laranja],
-                    "devedor_alvo": devedor,
-                    "source_events": events,
-                    "descricao": (
-                        f"O devedor {devedor} transferiu quotas para {offshore}, "
-                        f"que nomeou {laranja} como procurador com plenos poderes"
-                        + (" — pessoa com vínculo familiar com o devedor." if familiar else ".")
-                    ),
-                    "conclusao_juridica": (
-                        "Evidência robusta de esvaziamento patrimonial planejado "
-                        "para frustrar a execução fiscal da União (triangulação "
-                        "cíclica de quotas)."
-                    ),
-                })
+        for proc in procs_by_src.get(venda["dst"], []):
+            devedor, offshore, laranja = venda["src"], venda["dst"], proc["dst"]
+            familiar = (devedor, laranja) in familiares
+            events = set(venda["events"]) | set(proc["events"])
+            if familiar:
+                events |= fam_events.get((devedor, laranja), set())
+            out.append({
+                "pattern": "triangulacao_offshore",
+                "severidade": "CRITICA" if familiar else "ALTA",
+                "envolvidos": [devedor, offshore, laranja],
+                "devedor_alvo": devedor,
+                "source_events": events,
+                "descricao": (
+                    f"O devedor {devedor} transferiu quotas para {offshore}, "
+                    f"que nomeou {laranja} como procurador com plenos poderes"
+                    + (" — pessoa com vínculo familiar com o devedor." if familiar else ".")
+                ),
+                "conclusao_juridica": (
+                    "Evidência robusta de esvaziamento patrimonial planejado "
+                    "para frustrar a execução fiscal da União (triangulação "
+                    "cíclica de quotas)."
+                ),
+            })
     return out
 
 

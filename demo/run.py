@@ -363,7 +363,8 @@ def run(target, keep=False):
     try:
         tl = GraphTimeline(client)
         g_full = tl.at_lsn(tl.head())
-        teorias = {t.devedor: t for t in TheoryBuilder(client).build_all(graph=g_full)}
+        teorias = {t.devedor: t for t in TheoryBuilder(client).build_all(
+            graph=g_full, rows=list(all_rows.values()))}
     except Exception as e:  # noqa: BLE001 — o painel não depende disto
         print(f"  (teoria do caso indisponível: {e})")
         teorias = {}

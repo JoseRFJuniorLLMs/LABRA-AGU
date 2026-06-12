@@ -77,9 +77,19 @@ def test_act_r_recencia_e_frequencia():
 def test_act_r_boost():
     m = ACTREngine()
     base = m.calculate_activation("Z", 10000)  # -inf, nunca visto
-    m.boost("Z", 5)
-    apos = m.calculate_activation("Z")
+    m.boost("Z", tick=10, weight=5)
+    apos = m.calculate_activation("Z", 10000)
     assert apos > base
+
+
+def test_act_r_deterministico():
+    # O MESMO log (mesmos ticks) tem de dar a MESMA ativação — sem wall-clock.
+    def corre():
+        m = ACTREngine()
+        for t in (1, 3, 7, 12):
+            m.record_access("CPF:1", t)
+        return m.calculate_activation("CPF:1", 20)
+    assert corre() == corre()
 
 
 def test_relatorio_contem_custodia():

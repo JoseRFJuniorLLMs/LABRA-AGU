@@ -68,11 +68,12 @@ def gerar_relatorio_md(insight_row: dict, provenance: list,
     out.append(payload.get("conclusao_juridica", "—"))
     out.append("")
 
-    out.append("## 5. Cadeia de Custódia (Proveniência Criptográfica)")
+    out.append("## 5. Cadeia de Custódia (Log Imutável, Append-Only)")
     out.append("")
     if provenance:
-        out.append("Este achado é sustentado pelos seguintes eventos imutáveis "
-                   "do log (cada um carimbado no tempo e protegido por hash):")
+        out.append("Este achado é sustentado pelos seguintes eventos do log "
+                   "append-only — imutáveis, ordenados por LSN e consultáveis "
+                   "*AS OF* qualquer ponto do passado:")
         out.append("")
         out.append("| ULID do evento-fonte | Tipo | Referência documental |")
         out.append("|---|---|---|")
@@ -104,5 +105,6 @@ def gerar_relatorio_md(insight_row: dict, provenance: list,
     out.append("")
     out.append("---")
     out.append("*Panta rhei — a verdade não se edita. Este relatório nasce de "
-               "eventos imutáveis e a sua origem é matematicamente verificável.*")
+               "eventos imutáveis num log append-only e a sua origem é "
+               "reconstruível por replay AS OF, auditável de forma independente.*")
     return "\n".join(out)

@@ -2,20 +2,23 @@
 grpcio==1.62.1
 grpcio-tools==1.62.1
 pydantic==2.6.4
-numpy==1.26.4
 
 # Ingestão multimodal (opcional — instale conforme o formato dos documentos)
 pdfplumber
 python-docx
-moviepy
-SpeechRecognition
-pydub
+# Transcrição de áudio/vídeo 100% LOCAL (LGPD — nada sai da máquina).
+# Decodifica mp3/wav/mp4/avi via ffmpeg; requer ffmpeg no PATH.
+faster-whisper
 
 # Pipeline universal de bancos (opcional — + driver do seu banco)
 SQLAlchemy
 
-# Parser por LLM (opcional — requer ANTHROPIC_API_KEY; fallback determinístico)
+# Parser por LLM (opcional — fallback determinístico se ausente)
+#   backend anthropic: requer ANTHROPIC_API_KEY
 anthropic
+#   backend local (LABRA_LLM_BACKEND=local): servidor OpenAI-compatible
+#   (LM Studio/Ollama/vLLM) com um modelo local, ex. Gemma 4
+openai
 
 # Testes
 pytest

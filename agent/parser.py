@@ -69,6 +69,12 @@ class ParsedDocument(BaseModel):
     transactions: List[Transaction] = []
     marcos_judiciais: List[str] = []  # datas ISO de penhora/citação/bloqueio
     source_event_id: str
+    # Sinal de confiança da extração (1.0 = alta). O parser determinístico é
+    # frágil a redações fora dos gatilhos canónicos: quando há vários
+    # identificadores mas poucos/nenhuns fatos, marca para REVISÃO HUMANA em
+    # vez de produzir um grafo incompleto em silêncio.
+    confidence: float = 1.0
+    needs_review: bool = False
 
 
 def _to_iso(br_date: str) -> str:
@@ -237,10 +243,29 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]
 
+    confidence, needs_review = _assess_confidence(
+        flat, entities, relations, transactions)
+
     return ParsedDocument(
         entities=entities,
         relations=relations,
         transactions=transactions,
         marcos_judiciais=marcos,
         source_event_id=source_event_id,
+        confidence=confidence,
+        needs_review=needs_review,
     )
+
+
+def _assess_confidence(text, entities, relations, transactions):
+    """Heurística de confiança da extração determinística. Vários
+    identificadores presentes mas (quase) nenhum fato relacionado = forte
+    indício de que a redação fugiu aos gatilhos canónicos → revisão humana
+    (ou reprocessamento pelo parser LLM)."""
+    n_ids = len(entities)
+    n_fatos = len(relations) + len(transactions)
+    if n_ids >= 2 and n_fatos == 0 and len(text) > 200:
+        return 0.3, True
+    if n_ids >= 3 and n_fatos < n_ids // 3:
+        return 0.6, True
+    return 1.0, False

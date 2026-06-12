@@ -2,9 +2,12 @@
 causal_chain — reconstrução do nexo de causalidade (Fase 2, passo 3).
 
 Prova que uma ação FACILITOU outra (ex.: a venda de quotas viabilizou a
-procuração que esvaziou o patrimônio). O tempo vem de graça do HeraclitusDB:
-os ULIDs ordenam-se LEXICOGRAFICAMENTE por instante de criação, logo a ordem
-causal é a ordem dos ULIDs — sem depender de datas declaradas no texto.
+procuração que esvaziou o patrimônio). A ordem causal usa a DATA declarada do
+fato (quando existe) como critério primário e o ULID do evento-fonte como
+desempate. Isto importa quando vários fatos chegam no MESMO documento (logo
+partilham o ULID-fonte): sem a data, todos colapsariam num único instante e o
+encadeamento desapareceria. O ULID continua a ser a âncora temporal de
+fallback (ordena-se lexicograficamente por instante de criação).
 
 Modelo: cada aresta do CaseGraph (relação/transação) é um FATO com a sua
 proveniência (ULIDs). Uma entidade que reaparece em fatos sucessivos é o fio
@@ -22,6 +25,12 @@ from .entities import normalize_id
 from .graph import CaseGraph
 
 _TX_KIND = "TRANSFERENCIA"
+
+
+def _order_key(f: dict):
+    """Chave de ordenação temporal de um fato: data ISO declarada (string vazia
+    se ausente, ordenando antes das datadas) e depois o ULID-fonte. Determinística."""
+    return (f.get("date") or "", f["ulid"])
 
 
 class CausalChainBuilder:
@@ -82,11 +91,14 @@ class CausalChainBuilder:
         chain: List[dict] = []
         seen_links: Set[tuple] = set()
         for ent, fs in by_entity.items():
-            # dedup de fatos idênticos e ordenação temporal por ULID
+            # dedup de fatos idênticos e ordenação temporal: DATA primeiro
+            # (quando declarada), ULID como desempate/fallback.
             uniq = {(f["ulid"], f["kind"], f["src"], f["dst"]): f for f in fs}
-            ordered = sorted(uniq.values(), key=lambda x: x["ulid"])
+            ordered = sorted(uniq.values(), key=_order_key)
             for a, b in zip(ordered, ordered[1:]):
-                if a["ulid"] == b["ulid"]:
+                # Sem precedência temporal distinguível (mesma data E mesmo
+                # ULID) não há "viabilizou" — não inventa nexo.
+                if _order_key(a) == _order_key(b):
                     continue
                 key = (a["ulid"], b["ulid"], ent)
                 if key in seen_links:

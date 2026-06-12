@@ -1,61 +1,55 @@
-import time
-import numpy as np
-from typing import Dict
+"""
+ACT-R base-level activation — com RELÓGIO LÓGICO (não wall-clock).
+
+Num sistema event-sourced cuja tese é o replay determinístico ("a verdade não
+se edita"), a ativação tem de ser REPRODUZÍVEL: o mesmo log tem de produzir a
+mesma ativação em qualquer replay, em qualquer máquina. Por isso o "tempo" aqui
+é o TICK LÓGICO do evento (a sua ordem no log), nunca `time.time()`. Assim a
+relevância sub-simbólica que entra no insight pericial é determinística e
+auditável — não muda conforme o momento em que o daemon processou o evento.
+
+Equação ACT-R (base-level):  A_i = ln( Σ_j (now - t_j)^(-d) )
+onde `now` e `t_j` são ticks lógicos (posições no log), e `d` o decaimento.
+"""
+import math
+from typing import Dict, List
+
 
 class ACTREngine:
     def __init__(self, decay_rate: float = 0.5):
         self.decay_rate = decay_rate
-        self.memory_activations: Dict[str, list] = {}
-        
-    def record_access(self, entity_id: str, timestamp: float = None):
-        if timestamp is None:
-            timestamp = time.time()
+        # entidade -> lista de ticks lógicos de acesso
+        self.memory_activations: Dict[str, List[int]] = {}
 
-        if entity_id not in self.memory_activations:
-            self.memory_activations[entity_id] = []
-        self.memory_activations[entity_id].append(timestamp)
+    def record_access(self, entity_id: str, tick: int):
+        """Regista um acesso à entidade no tick lógico `tick` (posição no log)."""
+        self.memory_activations.setdefault(entity_id, []).append(int(tick))
 
-    def boost(self, entity_id: str, weight: int = 5):
+    def boost(self, entity_id: str, tick: int, weight: int = 5):
         """
-        Reforço dirigido: uma DIRETRIZ da Procuradoria injeta `weight`
-        acessos sintéticos na memória do alvo, elevando sua base-level
-        activation — o agente passa a "pensar mais" nessa entidade sem
-        alterar a fórmula ACT-R.
+        Reforço dirigido: uma DIRETRIZ da Procuradoria injeta `weight` acessos
+        sintéticos no tick lógico atual, elevando a base-level activation do
+        alvo — o agente "pensa mais" nessa entidade, de forma reproduzível.
         """
-        now = time.time()
         for _ in range(max(1, weight)):
-            self.record_access(entity_id, now)
-        
-    def calculate_activation(self, entity_id: str, current_time: float = None) -> float:
-        """
-        Calcula a base-level activation de acordo com a equação de ACT-R:
-        A_i = ln( sum( (t_current - t_j)^(-d) ) )
-        """
-        if current_time is None:
-            current_time = time.time()
-            
-        if entity_id not in self.memory_activations:
-            return -np.inf
-            
-        accesses = self.memory_activations[entity_id]
-        sum_decay = 0.0
-        
-        for t_j in accesses:
-            time_diff = max(current_time - t_j, 1e-5) # evita div por zero
-            sum_decay += time_diff ** (-self.decay_rate)
-            
-        if sum_decay <= 0:
-            return -np.inf
-            
-        return np.log(sum_decay)
+            self.record_access(entity_id, tick)
 
-    def filter_relevant_entities(self, entity_ids: list, threshold: float = -2.0) -> list:
-        """
-        Filtra e retorna apenas as entidades com ativação acima do threshold.
-        """
-        relevant = []
-        for eid in entity_ids:
-            act = self.calculate_activation(eid)
-            if act >= threshold:
-                relevant.append(eid)
-        return relevant
+    def calculate_activation(self, entity_id: str, now: int) -> float:
+        """Base-level activation da entidade avaliada no tick lógico `now`."""
+        accesses = self.memory_activations.get(entity_id)
+        if not accesses:
+            return float("-inf")
+        soma = 0.0
+        for t_j in accesses:
+            # Distância em ticks lógicos. Piso de 1 evita divisão por zero e
+            # mantém o determinismo: um acesso no próprio tick atual conta como
+            # recência máxima (1), em vez de explodir para infinito.
+            dt = max(now - int(t_j), 1)
+            soma += dt ** (-self.decay_rate)
+        return math.log(soma) if soma > 0 else float("-inf")
+
+    def filter_relevant_entities(self, entity_ids: list, now: int,
+                                 threshold: float = -2.0) -> list:
+        """Entidades cuja ativação (avaliada em `now`) supera o limiar."""
+        return [eid for eid in entity_ids
+                if self.calculate_activation(eid, now) >= threshold]
