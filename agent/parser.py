@@ -119,6 +119,26 @@ _FAMILIA_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Heurísticas avançadas de blindagem (Fase 2 — alimentam o asset_shield). Cada
+# uma liga dois ids por um gatilho lexical, sem outro id no meio (precisão).
+#   DOACAO     : "<X> doou ... para <Y>"                         (doação cruzada)
+#   ADMINISTRA : "<X> ... usufrutuário/administrador vitalício ... <Y>"  (holding)
+#   CONTROLA   : "<X> controla ... <Y>"                          (offshore cascata)
+_DOACAO_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\b(?:doou|doaram|doa[çc][ãa]o)\b"
+    rf"(?:(?!{_ID}).)*?\bpara\b\s+(?:a\s+|o\s+)?({_ID})",
+    re.IGNORECASE | re.DOTALL,
+)
+_ADMIN_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\b(?:administrador[a]?\s+vital[íi]ci[oa]"
+    rf"|usufrutu[áa]ri[oa]|usufruto)\b(?:(?!{_ID}).)*?({_ID})",
+    re.IGNORECASE | re.DOTALL,
+)
+_CONTROLA_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\bcontrola\b(?:(?!{_ID}).)*?({_ID})",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def parse_document(text: str, source_event_id: str) -> ParsedDocument:
     """Extração determinística de entidades, relações e transações."""
@@ -174,6 +194,25 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
         relativo, dev = m.group(1), m.group(2)
         relations.append(Relation(
             source_id=dev, target_id=relativo, relation_type="FAMILIAR"))
+
+    # Heurísticas avançadas de blindagem (Fase 2): doação, usufruto/administração
+    # vitalícia e controle em cascata — populam o grafo para o asset_shield.
+    # _trim apara pontuação à direita: a classe de _ID inclui '.' (CPF
+    # formatado), logo um id no fim de frase engoliria o ponto final.
+    def _trim(tok):
+        return re.sub(r"[^0-9A-Za-z]+$", "", tok)
+    for m in _DOACAO_RE.finditer(flat):
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type="DOACAO"))
+    for m in _ADMIN_RE.finditer(flat):
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type="ADMINISTRA"))
+    for m in _CONTROLA_RE.finditer(flat):
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type="CONTROLA"))
 
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]
