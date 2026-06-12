@@ -189,6 +189,8 @@ _JS = """
     el('t_dev').textContent=short(c.dev_n); el('t_dev2').textContent=c.dev;
     el('t_off').textContent=short(c.off_n); el('t_off2').textContent=c.off;
     el('t_lar').textContent=short(c.lar_n); el('t_lar2').textContent=c.lar;
+    el('l_venda').textContent=c.lbl_venda; el('l_proc').textContent=c.lbl_proc;
+    el('l_frac').textContent=c.lbl_frac; el('l_fam').textContent=c.lbl_fam;
     var box=el('cards'); box.innerHTML=''; c.alerts.forEach(function(a){box.appendChild(card(a));});
     scrub.max=c.steps.length-1; scrub.value=c.steps.length-1;
     ticks.innerHTML='';
