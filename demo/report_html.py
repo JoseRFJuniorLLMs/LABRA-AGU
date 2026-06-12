@@ -82,6 +82,8 @@ _CSS = """<style>
   .minuta code{background:#EEF2F7;padding:1px 5px;border-radius:4px;}
   .minuta blockquote{border-left:3px solid #1351B4;margin:.6rem 0;padding:6px 12px;background:#F7F9FC;color:#5B6B7B;font-size:.8rem;}
   .minuta ul{margin:.3rem 0 .6rem;padding-left:20px;} .minuta li{margin:3px 0;} .minuta p{margin:.4rem 0;}
+  #tip{position:fixed;z-index:60;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
+  #tip b{color:#0C326F;}
 </style>"""
 
 _HTML = """<body>
@@ -142,7 +144,8 @@ _HTML = """<body>
     entidades. Tudo vive no log append-only do HeraclitusDB — imutável e consultável
     <b>AS OF</b> qualquer ponto do passado.
   </div>
-  </div>"""
+  </div>
+  <div id="tip"></div>"""
 
 _JS = """
   var el=function(id){return document.getElementById(id);};
@@ -151,6 +154,10 @@ _JS = """
   function sev(s){return s==='CRITICA'?['#C0392B','#FBE9E7','CRÍTICA']:s==='ALTA'?['#B9770E','#FCF3E3','ALTA']:['#5B6B7B','#EEF2F7',s];}
   el('m_cases').textContent=TOTALS.cases; el('m_fraudes').textContent=TOTALS.fraudes; el('m_criticas').textContent=TOTALS.criticas;
   var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks'), svg=el('g');
+  var tip=el('tip');
+  function moveTip(ev){ var w=tip.offsetWidth||220; tip.style.left=Math.max(8,ev.clientX-w-16)+'px'; tip.style.top=Math.max(8,ev.clientY-12)+'px'; }
+  function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block'; moveTip(ev); }
+  function hideTip(){ tip.style.display='none'; }
   if(CASES.length>1){
     CASES.forEach(function(c,i){ var o=document.createElement('option'); o.value=i;
       o.textContent='Caso '+(i+1)+' · '+c.dev_n+' ('+c.dev+') · '+c.alerts.length+' fraude(s)'; sel.appendChild(o); });
@@ -222,7 +229,10 @@ _JS = """
     ticks.innerHTML='';
     (c.ticks||[]).forEach(function(t,i){ var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
       r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+esc(t.date||('#'+(i+1)))+'</span><span class="tev">'+esc(t.label)+'</span></span>';
-      r.onclick=function(){scrub.value=i;renderReveal();}; ticks.appendChild(r); });
+      r.onclick=function(){scrub.value=i;renderReveal();};
+      var html='<b>'+esc(t.date||('passo '+(i+1)))+' · '+esc(t.label)+'</b><div style="margin-top:3px;color:#5B6B7B">'+esc(t.resumo||'')+'</div>';
+      r.onmouseenter=function(ev){showTip(ev,html);}; r.onmousemove=moveTip; r.onmouseleave=hideTip;
+      ticks.appendChild(r); });
     scrub.max=Math.max(0,((c.ticks||[]).length)-1); scrub.value=scrub.max;
     sel.value=active; renderReveal();
   }

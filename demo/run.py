@@ -88,14 +88,30 @@ def _subgraph(g, devedor, cotas_map):
         else:
             lab = _EDGE_BASE.get(rt, rt.lower())
         edges.append({"src": s, "dst": d, "kind": rt, "label": lab, "t": ti.get(ev, 0)})
+    from collections import Counter as _Counter
+    _FRASE = {"VENDEDOR_QUOTAS": "venda de quotas à offshore",
+              "PROCURADOR_COM_PODERES": "procuração com plenos poderes ao laranja",
+              "FAMILIAR": "vínculo familiar (cunhado)",
+              "DOACAO": "doação a interposta pessoa",
+              "ADMINISTRA": "usufruto / administração vitalícia",
+              "CONTROLA": "controle em cascata"}
     ticks = []
     for u in ulids:
         kinds = {e[2] for e in eds if e[5] == u}
+        cnt = _Counter(e[2] for e in eds if e[5] == u)
         dt = next((e[4] for e in eds if e[5] == u and e[4]), "")
         lab = ("Venda de quotas" if "VENDEDOR_QUOTAS" in kinds else
                "Procuração" if "PROCURADOR_COM_PODERES" in kinds else
                "Fracionamento" if "TRANSFERENCIA" in kinds else "Documento (vínculos)")
-        ticks.append({"label": lab, "date": _br(dt)})
+        fr = []
+        if cnt.get("TRANSFERENCIA"):
+            fr.append(f"{cnt['TRANSFERENCIA']} transferências fracionadas")
+        for k in ("VENDEDOR_QUOTAS", "PROCURADOR_COM_PODERES", "FAMILIAR",
+                  "DOACAO", "ADMINISTRA", "CONTROLA"):
+            if cnt.get(k):
+                fr.append(_FRASE[k])
+        ticks.append({"label": lab, "date": _br(dt),
+                      "resumo": "; ".join(fr) if fr else lab})
     return nodes, edges, ticks
 
 
