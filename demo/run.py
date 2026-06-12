@@ -73,8 +73,11 @@ def _subgraph(g, devedor, cotas_map):
             continue
         comp.add(n); stack.extend(adj[n] - comp)
     eds = [e for e in eds if e[0] in comp and e[1] in comp]
-    ulids = sorted({e[5] for e in eds if e[5]})
-    ti = {u: i for i, u in enumerate(ulids)}
+    # Agora a linha do tempo é pelas datas (cronologia real) em vez dos ULIDs do log
+    dates = sorted({e[4] for e in eds if e[4]})
+    if any(not e[4] for e in eds):
+        dates = [""] + dates
+    ti = {d: i for i, d in enumerate(dates)}
     nodes = [{"id": c, "label": nome_de(c) or g.entities.get(c, c),
               "id_fmt": _fmt_id(c), "kind": g.entity_kind.get(c, "")}
              for c in comp]
@@ -89,31 +92,35 @@ def _subgraph(g, devedor, cotas_map):
             lab = _EDGE_BASE.get(rt, rt.lower())
         if dt:  # acrescenta a data ao rótulo onde a relação a tem
             lab = lab + " · " + _br(dt)
-        edges.append({"src": s, "dst": d, "kind": rt, "label": lab, "t": ti.get(ev, 0)})
+        edges.append({"src": s, "dst": d, "kind": rt, "label": lab, "t": ti.get(dt, 0)})
     from collections import Counter as _Counter
     _FRASE = {"VENDEDOR_QUOTAS": "venda de quotas à offshore",
               "PROCURADOR_COM_PODERES": "procuração com plenos poderes ao laranja",
-              "FAMILIAR": "vínculo familiar (cunhado)",
+              "FAMILIAR": "vínculo familiar",
               "DOACAO": "doação a interposta pessoa",
               "ADMINISTRA": "usufruto / administração vitalícia",
               "CONTROLA": "controle em cascata",
               "DESVIO_INSS": "desvio de benefícios do INSS"}
     ticks = []
-    for u in ulids:
-        kinds = {e[2] for e in eds if e[5] == u}
-        cnt = _Counter(e[2] for e in eds if e[5] == u)
-        dt = next((e[4] for e in eds if e[5] == u and e[4]), "")
-        lab = ("Venda de quotas" if "VENDEDOR_QUOTAS" in kinds else
-               "Procuração" if "PROCURADOR_COM_PODERES" in kinds else
-               "Fracionamento" if "TRANSFERENCIA" in kinds else "Documento (vínculos)")
+    for d in dates:
+        kinds = {e[2] for e in eds if e[4] == d}
+        cnt = _Counter(e[2] for e in eds if e[4] == d)
+        
+        if not d:
+            lab = "Documentos iniciais"
+        else:
+            lab = ("Venda de quotas" if "VENDEDOR_QUOTAS" in kinds else
+                   "Procuração" if "PROCURADOR_COM_PODERES" in kinds else
+                   "Fracionamento" if "TRANSFERENCIA" in kinds else "Documento (vínculos)")
+        
         fr = []
         if cnt.get("TRANSFERENCIA"):
             fr.append(f"{cnt['TRANSFERENCIA']} transferências fracionadas")
         for k in ("VENDEDOR_QUOTAS", "PROCURADOR_COM_PODERES", "FAMILIAR",
-                  "DOACAO", "ADMINISTRA", "CONTROLA"):
+                  "DOACAO", "ADMINISTRA", "CONTROLA", "DESVIO_INSS"):
             if cnt.get(k):
                 fr.append(_FRASE[k])
-        ticks.append({"label": lab, "date": _br(dt),
+        ticks.append({"label": lab, "date": _br(d) if d else "Início",
                       "resumo": "; ".join(fr) if fr else lab})
     return nodes, edges, ticks
 

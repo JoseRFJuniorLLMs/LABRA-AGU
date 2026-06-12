@@ -197,34 +197,42 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
             date=_to_iso(m.group(4)) if m.group(4) else None,
         ))
 
-    # Vínculo familiar declarado de forma autónoma (fonte separada)
-    for m in _FAMILIA_RE.finditer(flat):
-        relativo, dev = m.group(1), m.group(2)
-        relations.append(Relation(
-            source_id=dev, target_id=relativo, relation_type="FAMILIAR"))
-
-    # Heurísticas avançadas de blindagem (Fase 2): doação, usufruto/administração
-    # vitalícia e controle em cascata — populam o grafo para o asset_shield.
     # _trim apara pontuação à direita: a classe de _ID inclui '.' (CPF
     # formatado), logo um id no fim de frase engoliria o ponto final.
     def _trim(tok):
         return re.sub(r"[^0-9A-Za-z]+$", "", tok)
+
+    def _data_apos(m):
+        """Data declarada na frase da relação (ex.: '... em 12/03/2024'),
+        para a linha do tempo cronológica do painel."""
+        ds = _DATE_RE.findall(flat[m.start():m.end() + 60])
+        return _to_iso(ds[0]) if ds else None
+
+    # Vínculo familiar declarado de forma autónoma (fonte separada)
+    for m in _FAMILIA_RE.finditer(flat):
+        relativo, dev = m.group(1), m.group(2)
+        relations.append(Relation(
+            source_id=dev, target_id=relativo, relation_type="FAMILIAR",
+            date=_data_apos(m)))
+
+    # Heurísticas avançadas de blindagem (Fase 2): doação, usufruto/administração
+    # vitalícia, controle em cascata e desvio do INSS.
     for m in _DOACAO_RE.finditer(flat):
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
-            relation_type="DOACAO"))
+            relation_type="DOACAO", date=_data_apos(m)))
     for m in _ADMIN_RE.finditer(flat):
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
-            relation_type="ADMINISTRA"))
+            relation_type="ADMINISTRA", date=_data_apos(m)))
     for m in _CONTROLA_RE.finditer(flat):
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
-            relation_type="CONTROLA"))
+            relation_type="CONTROLA", date=_data_apos(m)))
     for m in _INSS_RE.finditer(flat):
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
-            relation_type="DESVIO_INSS"))
+            relation_type="DESVIO_INSS", date=_data_apos(m)))
 
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]

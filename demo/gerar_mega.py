@@ -73,12 +73,25 @@ def main():
 
     L = ["RELATÓRIO INTEGRADO DE INVESTIGAÇÃO — MEGA-ESQUEMA — LABRA / PGU-AGU."]
 
+    # Relógio do esquema: cada relação ganha uma data, avançando 2023 → 2026,
+    # para a linha do tempo do painel ser uma cronologia fina (não 4 passos).
+    import datetime
+    _cur = [datetime.date(2023, 1, 9)]
+
+    def dt():
+        _cur[0] += datetime.timedelta(days=rng.randint(4, 15))
+        return _cur[0].strftime("%d/%m/%Y")
+
+    def addr(frase):
+        """Acrescenta a relação ao documento, datada (… em DD/MM/AAAA)."""
+        L.append(frase.rstrip(".") + f", em {dt()}.")
+
     def pessoas(n, frase):
         out = []
         for _ in range(n):
             i = reg(cpf())
             out.append(i)
-            L.append(frase.format(i))
+            addr(frase.format(i))
         return out
 
     def empresas(n, frase):
@@ -86,7 +99,7 @@ def main():
         for _ in range(n):
             i = reg(cnpj())
             out.append(i)
-            L.append(frase.format(i))
+            addr(frase.format(i))
         return out
 
     big = lambda: _brl(rng.randint(2, 14) * 1_000_000)  # noqa: E731

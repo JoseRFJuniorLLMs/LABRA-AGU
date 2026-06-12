@@ -36,19 +36,24 @@ _CSS = """<style>
   .asof{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:.85rem;color:#5B6B7B;}
   .asof b{color:#0C326F;font-size:1rem;}
   .asof .desc{margin-left:auto;color:#1B2B40;}
-  .stage{display:flex;gap:18px;}
+  .stage{display:flex;gap:18px;margin-right:160px;}
   .panel{flex:1;background:#fff;border:1px solid #D8E0EA;border-radius:14px;padding:12px;box-shadow:0 1px 2px #0c326f0f;}
   .alerts-live{display:flex;flex-wrap:wrap;gap:7px;padding:10px 6px 4px;min-height:34px;}
   .chip{font-size:12px;font-weight:600;padding:4px 11px;border-radius:7px;}
-  .scrubber{display:flex;gap:12px;}
-  .scrubber input[type=range]{writing-mode:vertical-lr;width:30px;height:330px;accent-color:#1351B4;}
-  .ticks{display:flex;flex-direction:column;justify-content:space-between;height:330px;font-size:12px;}
-  .tick{display:flex;align-items:center;gap:8px;color:#5B6B7B;cursor:pointer;white-space:nowrap;}
-  .tick .dot{width:9px;height:9px;border-radius:50%;background:#C3CEDC;flex:none;}
+  .scrubber{position:fixed;right:14px;top:110px;bottom:32px;display:flex;flex-direction:row;gap:0;z-index:100;align-items:stretch;}
+  .scrub-track{width:6px;border-radius:3px;background:#D8E0EA;flex:none;position:relative;cursor:pointer;margin-right:6px;align-self:stretch;}
+  .scrub-thumb{position:absolute;left:50%;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:#1351B4;box-shadow:0 0 0 3px rgba(19,81,180,0.25);cursor:grab;transition:top .15s;}
+  .ticks{display:flex;flex-direction:column;gap:2px;overflow-y:auto;max-height:100%;font-size:12px;background:rgba(255,255,255,0.92);padding:10px 12px;border-radius:12px;box-shadow:0 4px 15px rgba(12,50,111,0.12);backdrop-filter:blur(4px);pointer-events:auto;scrollbar-width:thin;scrollbar-color:#D8E0EA transparent;}
+  .ticks::-webkit-scrollbar{width:4px;} .ticks::-webkit-scrollbar-thumb{background:#C3CEDC;border-radius:2px;}
+  .tick{display:flex;align-items:center;gap:8px;color:#5B6B7B;cursor:pointer;white-space:nowrap;padding:3px 0;border-radius:6px;transition:background .12s;}
+  .tick:hover{background:#F0F4FA;}
+  .tick .dot{width:9px;height:9px;border-radius:50%;background:#C3CEDC;flex:none;transition:background .15s, transform .15s;}
   .tick .tk{display:flex;flex-direction:column;line-height:1.15;}
   .tick .td{font-weight:600;color:#1B2B40;}
   .tick .tev{font-size:10.5px;color:#5B6B7B;}
+  .tick.on{background:#EEF4FF;}
   .tick.on .td{color:#0C326F;}
+  .tick.on .dot{background:#1351B4;transform:scale(1.3);}
   .ficha{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
   .fe{background:#fff;border:1px solid #D8E0EA;border-radius:10px;padding:9px 13px;font-size:.82rem;}
   .fe .role{display:block;font-size:.66rem;color:#5B6B7B;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;}
@@ -86,6 +91,9 @@ _CSS = """<style>
   .graphbox{position:relative;}
   .fs-btn{position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid #D8E0EA;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;color:#0C326F;}
   .fs-btn:hover{background:#F7F9FC;}
+  .stab-btn{position:absolute;top:38px;right:8px;z-index:5;background:#fff;border:1px solid #D8E0EA;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;color:#0C326F;}
+  .stab-btn:hover{background:#F7F9FC;}
+  .stab-btn.frozen{color:#C0392B;}
   .graphbox.fs{position:fixed;inset:0;z-index:200;background:#fff;padding:10px;border-radius:0;}
   .graphbox.fs .netg{height:calc(100vh - 20px);}
   #tip{position:fixed;z-index:60;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
@@ -125,14 +133,15 @@ _HTML = """<body>
     <div class="panel">
       <div id="graphbox" class="graphbox">
         <button id="fs-btn" class="fs-btn" title="Tela cheia">⛶ Tela cheia</button>
+        <button id="stab-btn" class="stab-btn" title="Congelar movimento das arestas">❄ Congelar arestas</button>
         <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
       </div>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
-    <div class="scrubber">
-      <input id="scrub" type="range" min="0" max="5" step="1" value="0" aria-label="Linha do tempo"/>
-      <div class="ticks" id="ticks"></div>
-    </div>
+  </div>
+  <div class="scrubber" id="scrubber">
+    <div class="scrub-track" id="scrub-track"><div class="scrub-thumb" id="scrub-thumb"></div></div>
+    <div class="ticks" id="ticks"></div>
   </div>
 
   <h2>Alertas de Fraude — Detalhe (do caso selecionado)</h2>
@@ -162,7 +171,28 @@ _JS = """
   function short(s,n){n=n||14; s=s||''; return s.length>n?s.slice(0,n-1)+'…':s;}
   function sev(s){return s==='CRITICA'?['#C0392B','#FBE9E7','CRÍTICA']:s==='ALTA'?['#B9770E','#FCF3E3','ALTA']:['#5B6B7B','#EEF2F7',s];}
   el('m_cases').textContent=TOTALS.cases; el('m_fraudes').textContent=TOTALS.fraudes; el('m_criticas').textContent=TOTALS.criticas;
-  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks'), gdiv=el('g'), net=null, nodesDS=null, edgesDS=null, appearT={};
+  var active=0, scrubVal=0, sel=el('case-select'), ticks=el('ticks'), track=el('scrub-track'), thumb=el('scrub-thumb'), gdiv=el('g'), net=null, nodesDS=null, edgesDS=null, appearT={};
+  function scrubMax(){ var c=CASES[active]; return Math.max(0,((c.ticks||[]).length)-1); }
+  function setScrub(v,noRender){
+    scrubVal=Math.min(Math.max(0,v),scrubMax());
+    var pct=scrubMax()>0?scrubVal/scrubMax():0;
+    thumb.style.top=Math.round(pct*(track.offsetHeight-14))+'px';
+    if(!noRender) renderReveal();
+    // scroll tick activo para o centro
+    var kids=ticks.children;
+    if(kids[scrubVal]) kids[scrubVal].scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+  // drag na trilha
+  (function(){
+    var drag=false;
+    function pos(ev){ var r=track.getBoundingClientRect(), y=(ev.touches?ev.touches[0].clientY:ev.clientY)-r.top; return Math.round(Math.min(Math.max(0,y/r.height),1)*scrubMax()); }
+    track.addEventListener('mousedown',function(ev){drag=true;setScrub(pos(ev));ev.preventDefault();});
+    document.addEventListener('mousemove',function(ev){if(drag)setScrub(pos(ev));});
+    document.addEventListener('mouseup',function(){drag=false;});
+    track.addEventListener('touchstart',function(ev){drag=true;setScrub(pos(ev));},{passive:true});
+    document.addEventListener('touchmove',function(ev){if(drag)setScrub(pos(ev));},{passive:true});
+    document.addEventListener('touchend',function(){drag=false;});
+  })();
   var tip=el('tip');
   function moveTip(ev){ var w=tip.offsetWidth||220; tip.style.left=Math.max(8,ev.clientX-w-16)+'px'; tip.style.top=Math.max(8,ev.clientY-12)+'px'; }
   function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block'; moveTip(ev); }
@@ -201,7 +231,7 @@ _JS = """
       interaction:{hover:true, dragNodes:true, zoomView:true}, nodes:{shadow:false}, edges:{shadow:false}});
   }
   function renderReveal(){
-    var c=CASES[active], p=+scrub.value;
+    var c=CASES[active], p=scrubVal;
     if(nodesDS) nodesDS.update(c.nodes.map(function(n){ var on=appearT[n.id]<=p, col=fcol(c,n);
       return {id:n.id, opacity:on?1:0.22, color:{background:'#fff',border:on?col:'#C3CEDC'}, font:{color:on?'#1B2B40':'#C3CEDC'}}; }));
     if(edgesDS) edgesDS.update(c.edges.map(function(e,i){ var on=e.t<=p, col=ecol(e);
@@ -210,7 +240,10 @@ _JS = """
     el('asof').textContent='passo '+(p+1)+'/'+n+(tk.date?' · '+tk.date:'');
     el('asof-desc').textContent=tk.label||'';
     Array.prototype.forEach.call(ticks.children,function(r){ var on=+r.getAttribute('data-i')===p;
-      if(on)r.classList.add('on');else r.classList.remove('on'); r.querySelector('.dot').style.background=on?'#1351B4':'#C3CEDC'; });
+      if(on)r.classList.add('on');else r.classList.remove('on'); });
+    // reposiciona thumb
+    var pct=scrubMax()>0?scrubVal/scrubMax():0;
+    thumb.style.top=Math.round(pct*(track.offsetHeight-14))+'px';
   }
   function renderCase(){
     var c=CASES[active];
@@ -226,18 +259,18 @@ _JS = """
     ticks.innerHTML='';
     (c.ticks||[]).forEach(function(t,i){ var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
       r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+esc(t.date||('#'+(i+1)))+'</span><span class="tev">'+esc(t.label)+'</span></span>';
-      r.onclick=function(){scrub.value=i;renderReveal();};
+      r.onclick=function(){setScrub(i);};
       var html='<b>'+esc(t.date||('passo '+(i+1)))+' · '+esc(t.label)+'</b><div style="margin-top:3px;color:#5B6B7B">'+esc(t.resumo||'')+'</div>';
       r.onmouseenter=function(ev){showTip(ev,html);}; r.onmousemove=moveTip; r.onmouseleave=hideTip;
       ticks.appendChild(r); });
-    scrub.max=Math.max(0,((c.ticks||[]).length)-1); scrub.value=scrub.max;
-    sel.value=active; renderReveal();
+    sel.value=active; setScrub(scrubMax());
   }
-  scrub.addEventListener('input',renderReveal);
   var gbox=el('graphbox'), fsbtn=el('fs-btn');
   function fsApply(){ var on=gbox.classList.contains('fs'); fsbtn.textContent=on?'✕ Voltar':'⛶ Tela cheia'; if(net){ setTimeout(function(){ try{ net.redraw(); net.fit(); }catch(e){} },70); } }
   if(fsbtn) fsbtn.onclick=function(){ gbox.classList.toggle('fs'); fsApply(); };
   document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && gbox.classList.contains('fs')){ gbox.classList.remove('fs'); fsApply(); } });
+  var stabbtn=el('stab-btn'), pOn=true;
+  if(stabbtn) stabbtn.onclick=function(){ pOn=!pOn; stabbtn.textContent=pOn?'❄ Congelar arestas':'▶ Descongelar'; stabbtn.className='stab-btn'+(pOn?'':' frozen'); if(net){ net.setOptions({physics:{enabled:pOn}}); } };
   var btn=el('btn-llm');
   if(btn) btn.onclick=function(){ var cmd='py main.py --daemon --llm';
     try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
