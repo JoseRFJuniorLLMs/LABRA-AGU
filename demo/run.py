@@ -87,6 +87,8 @@ def _subgraph(g, devedor, cotas_map):
             lab = ("R$ " + f"{val:,.0f}".replace(",", ".")) if val else "transferiu"
         else:
             lab = _EDGE_BASE.get(rt, rt.lower())
+        if dt:  # acrescenta a data ao rótulo onde a relação a tem
+            lab = lab + " · " + _br(dt)
         edges.append({"src": s, "dst": d, "kind": rt, "label": lab, "t": ti.get(ev, 0)})
     from collections import Counter as _Counter
     _FRASE = {"VENDEDOR_QUOTAS": "venda de quotas à offshore",
