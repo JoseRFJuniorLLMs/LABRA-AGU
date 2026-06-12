@@ -141,9 +141,33 @@ def detect_offshore_cascata(g: CaseGraph) -> List[dict]:
     return out
 
 
+def detect_fraude_inss(g: CaseGraph) -> List[dict]:
+    """Desvio de benefícios previdenciários (INSS) para a rede do devedor —
+    estelionato previdenciário/organização para fraudar a Previdência."""
+    out = []
+    for r in g.rels("DESVIO_INSS"):
+        operador, destino = r["src"], r["dst"]
+        out.append({
+            "pattern": "fraude_inss",
+            "severidade": "CRITICA",
+            "envolvidos": [operador, destino],
+            "devedor_alvo": destino,
+            "source_events": set(r["events"]),
+            "descricao": (
+                f"{operador} desviou benefícios previdenciários do INSS para "
+                f"{destino}, integrando-os ao esquema de blindagem."),
+            "conclusao_juridica": (
+                "Fraude previdenciária organizada: apropriação/desvio de "
+                "benefícios do INSS (estelionato previdenciário, CP art. 171 "
+                "§ 3º; Lei 8.213/91), com lesão ao erário."),
+        })
+    return out
+
+
 # Catálogo de blindagem — mesmo formato do patterns.PATTERNS.
 SHIELD_PATTERNS: Dict[str, Callable[[CaseGraph], List[dict]]] = {
     "holding_usufruto": detect_holding_usufruto,
     "doacao_cruzada": detect_doacao_cruzada,
     "offshore_cascata": detect_offshore_cascata,
+    "fraude_inss": detect_fraude_inss,
 }

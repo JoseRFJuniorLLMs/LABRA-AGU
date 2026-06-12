@@ -138,6 +138,12 @@ _CONTROLA_RE = re.compile(
     rf"({_ID})(?:(?!{_ID}).)*?\bcontrola\b(?:(?!{_ID}).)*?({_ID})",
     re.IGNORECASE | re.DOTALL,
 )
+# Fraude previdenciária: "<operador> desviou ... INSS ... para <destino>".
+_INSS_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\bdesviou\b(?:(?!{_ID}).)*?\bINSS\b"
+    rf"(?:(?!{_ID}).)*?\bpara\b\s+(?:a\s+|o\s+)?({_ID})",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def parse_document(text: str, source_event_id: str) -> ParsedDocument:
@@ -213,6 +219,10 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
             relation_type="CONTROLA"))
+    for m in _INSS_RE.finditer(flat):
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type="DESVIO_INSS"))
 
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]

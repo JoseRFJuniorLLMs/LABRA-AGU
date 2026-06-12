@@ -58,6 +58,16 @@ MAPPING: Dict[str, List[dict]] = {
          "ementa": "Estrutura multipartite para ocultar o beneficiário efetivo "
                    "configura ocultação dolosa de patrimônio."},
     ],
+    "fraude_inss": [
+        {"tipo": "Estelionato previdenciário",
+         "dispositivo": "CP, art. 171, § 3º",
+         "ementa": "Obtenção de vantagem ilícita em prejuízo do INSS, com "
+                   "pena majorada por lesão a entidade de previdência."},
+        {"tipo": "Crime previdenciário / lesão ao erário",
+         "dispositivo": "Lei 8.213/91",
+         "ementa": "Apropriação e desvio de benefícios da Previdência Social, "
+                   "com ressarcimento ao erário e improbidade administrativa."},
+    ],
 }
 
 

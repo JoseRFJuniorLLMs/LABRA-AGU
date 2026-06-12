@@ -44,7 +44,7 @@ from agent.graph_timeline import GraphTimeline  # noqa: E402
 
 _EDGE_BASE = {"PROCURADOR_COM_PODERES": "procurador", "FAMILIAR": "cunhado",
               "DOACAO": "doou bem", "ADMINISTRA": "usufruto/admin",
-              "CONTROLA": "controla"}
+              "CONTROLA": "controla", "DESVIO_INSS": "desvio INSS"}
 
 
 def _br(dt):
@@ -94,7 +94,8 @@ def _subgraph(g, devedor, cotas_map):
               "FAMILIAR": "vínculo familiar (cunhado)",
               "DOACAO": "doação a interposta pessoa",
               "ADMINISTRA": "usufruto / administração vitalícia",
-              "CONTROLA": "controle em cascata"}
+              "CONTROLA": "controle em cascata",
+              "DESVIO_INSS": "desvio de benefícios do INSS"}
     ticks = []
     for u in ulids:
         kinds = {e[2] for e in eds if e[5] == u}
@@ -155,7 +156,8 @@ def _md_to_html(md: str) -> str:
 _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
 _ORDEM = ["triangulacao_offshore", "vespera_constricao",
           "fracionamento", "laranja_familiar",
-          "offshore_cascata", "doacao_cruzada", "holding_usufruto"]
+          "offshore_cascata", "doacao_cruzada", "holding_usufruto",
+          "fraude_inss"]
 
 
 def _sqlite_url(path: str) -> str:
