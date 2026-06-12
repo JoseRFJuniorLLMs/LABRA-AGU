@@ -82,6 +82,7 @@ _CSS = """<style>
   .minuta code{background:#EEF2F7;padding:1px 5px;border-radius:4px;}
   .minuta blockquote{border-left:3px solid #1351B4;margin:.6rem 0;padding:6px 12px;background:#F7F9FC;color:#5B6B7B;font-size:.8rem;}
   .minuta ul{margin:.3rem 0 .6rem;padding-left:20px;} .minuta li{margin:3px 0;} .minuta p{margin:.4rem 0;}
+  .netg{height:380px;background:#fff;border-radius:8px;}
   #tip{position:fixed;z-index:60;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
   #tip b{color:#0C326F;}
 </style>"""
@@ -117,7 +118,7 @@ _HTML = """<body>
   <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
   <div class="stage">
     <div class="panel">
-      <svg id="g" viewBox="0 0 760 360" width="100%" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></svg>
+      <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
     <div class="scrubber">
@@ -153,7 +154,7 @@ _JS = """
   function short(s,n){n=n||14; s=s||''; return s.length>n?s.slice(0,n-1)+'…':s;}
   function sev(s){return s==='CRITICA'?['#C0392B','#FBE9E7','CRÍTICA']:s==='ALTA'?['#B9770E','#FCF3E3','ALTA']:['#5B6B7B','#EEF2F7',s];}
   el('m_cases').textContent=TOTALS.cases; el('m_fraudes').textContent=TOTALS.fraudes; el('m_criticas').textContent=TOTALS.criticas;
-  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks'), svg=el('g');
+  var active=0, sel=el('case-select'), scrub=el('scrub'), ticks=el('ticks'), gdiv=el('g'), net=null, nodesDS=null, edgesDS=null, appearT={};
   var tip=el('tip');
   function moveTip(ev){ var w=tip.offsetWidth||220; tip.style.left=Math.max(8,ev.clientX-w-16)+'px'; tip.style.top=Math.max(8,ev.clientY-12)+'px'; }
   function showTip(ev,html){ tip.innerHTML=html; tip.style.display='block'; moveTip(ev); }
@@ -172,43 +173,31 @@ _JS = """
   }
   function fe(role,nome,id,cls){ return '<div class="fe '+(cls||'')+'"><span class="role">'+role+'</span><b>'+nome+'</b>'+(id?' <span class="id">'+id+'</span>':'')+'</div>'; }
 
-  // ── grafo dinâmico: layout por níveis (BFS a partir do devedor) ──
-  function layout(c){
-    var adj={}; c.nodes.forEach(function(n){adj[n.id]=[];});
-    c.edges.forEach(function(e){ if(adj[e.src]&&adj[e.dst]){adj[e.src].push(e.dst);adj[e.dst].push(e.src);} });
-    var lvl={}, q=[c.devedor_id]; lvl[c.devedor_id]=0;
-    while(q.length){ var u=q.shift(); (adj[u]||[]).forEach(function(w){ if(lvl[w]===undefined){lvl[w]=lvl[u]+1;q.push(w);} }); }
-    var byL={}; c.nodes.forEach(function(n){ var L=(lvl[n.id]===undefined)?1:lvl[n.id]; (byL[L]=byL[L]||[]).push(n); });
-    var ks=Object.keys(byL).map(Number), maxL=Math.max.apply(null,ks), W=760,H=360,pad=72,pos={};
-    ks.forEach(function(L){ var arr=byL[L], x=maxL?pad+(L/maxL)*(W-2*pad):W/2;
-      arr.forEach(function(n,i){ pos[n.id]={x:x, y:H*(i+1)/(arr.length+1)}; }); });
-    return pos;
-  }
+  // ── grafo dinâmico via vis-network (física, nós arrastáveis, sem sobreposição) ──
+  function fcol(c,n){ return n.id===c.devedor_id?'#C0392B':((n.kind||'').indexOf('JURIDICA')>=0?'#1351B4':'#B9770E'); }
+  function ecol(e){ return (e.kind==='VENDEDOR_QUOTAS'||e.kind==='PROCURADOR_COM_PODERES'||e.kind==='FAMILIAR')?'#C0392B':'#B9770E'; }
   function renderGraph(c){
-    var pos=layout(c);
-    var P=['<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94A3B8"/></marker></defs>'];
-    c.edges.forEach(function(e){
-      var a=pos[e.src], b=pos[e.dst]; if(!a||!b) return;
-      var col=(e.kind==='VENDEDOR_QUOTAS'||e.kind==='PROCURADOR_COM_PODERES'||e.kind==='FAMILIAR')?'#C0392B':'#B9770E';
-      P.push('<line class="ed" data-t="'+e.t+'" x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" stroke="'+col+'" stroke-width="1.8" marker-end="url(#ah)" opacity="0"/>');
-      var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-      P.push('<rect class="el" data-t="'+e.t+'" x="'+(mx-44)+'" y="'+(my-9)+'" width="88" height="15" rx="5" fill="#fff" stroke="'+col+'" opacity="0"/>');
-      P.push('<text class="el" data-t="'+e.t+'" x="'+mx+'" y="'+(my+2)+'" text-anchor="middle" font-size="9" fill="'+col+'" opacity="0">'+esc(short(e.label,17))+'</text>');
-    });
-    c.nodes.forEach(function(n){
-      var p=pos[n.id], col=(n.id===c.devedor_id)?'#C0392B':((n.kind||'').indexOf('JURIDICA')>=0?'#1351B4':'#B9770E');
-      P.push('<g class="nd" data-id="'+esc(n.id)+'" opacity="0.18"><circle cx="'+p.x+'" cy="'+p.y+'" r="31" fill="#fff" stroke="'+col+'" stroke-width="2.4"/>'
-        +'<text x="'+p.x+'" y="'+(p.y-1)+'" text-anchor="middle" font-size="9" font-weight="700" fill="#1B2B40">'+esc(short(n.label,12))+'</text>'
-        +'<text x="'+p.x+'" y="'+(p.y+9)+'" text-anchor="middle" font-size="6.5" fill="#5B6B7B">'+esc(n.id_fmt)+'</text></g>');
-    });
-    svg.innerHTML=P.join('');
+    appearT={}; appearT[c.devedor_id]=0;
+    c.edges.forEach(function(e){ [e.src,e.dst].forEach(function(id){ if(appearT[id]===undefined||e.t<appearT[id]) appearT[id]=e.t; }); });
+    if(typeof vis==='undefined'){ gdiv.innerHTML='<div style="padding:24px;color:#8a9aab;font-size:12px">(vis-network não carregada — verifique demo/vendor/vis-network.min.js)</div>'; return; }
+    nodesDS=new vis.DataSet(c.nodes.map(function(n){ var col=fcol(c,n);
+      return {id:n.id, label:short(n.label,16)+'\\n'+n.id_fmt, shape:'dot', size:(n.id===c.devedor_id?20:14),
+        color:{background:'#fff',border:col,highlight:{background:'#F7F9FC',border:col}}, borderWidth:2.6,
+        font:{size:11,color:'#1B2B40'}}; }));
+    edgesDS=new vis.DataSet(c.edges.map(function(e,i){ var col=ecol(e);
+      return {id:i, from:e.src, to:e.dst, label:e.label, arrows:'to', color:{color:col,highlight:col},
+        font:{size:10,color:col,strokeWidth:4,strokeColor:'#fff'}, smooth:{type:'dynamic'}, width:1.6}; }));
+    if(net) net.destroy();
+    net=new vis.Network(gdiv, {nodes:nodesDS, edges:edgesDS}, {
+      physics:{barnesHut:{springLength:155,avoidOverlap:0.5}, stabilization:{iterations:240}},
+      interaction:{hover:true, dragNodes:true, zoomView:true}, nodes:{shadow:false}, edges:{shadow:false}});
   }
   function renderReveal(){
     var c=CASES[active], p=+scrub.value;
-    Array.prototype.forEach.call(svg.querySelectorAll('.ed,.el'),function(x){ x.style.opacity=(+x.getAttribute('data-t')<=p)?1:0; });
-    var shown={}; shown[c.devedor_id]=1;
-    c.edges.forEach(function(e){ if(e.t<=p){shown[e.src]=1;shown[e.dst]=1;} });
-    Array.prototype.forEach.call(svg.querySelectorAll('.nd'),function(gn){ gn.style.opacity=shown[gn.getAttribute('data-id')]?1:0.18; });
+    if(nodesDS) nodesDS.update(c.nodes.map(function(n){ var on=appearT[n.id]<=p, col=fcol(c,n);
+      return {id:n.id, opacity:on?1:0.22, color:{background:'#fff',border:on?col:'#C3CEDC'}, font:{color:on?'#1B2B40':'#C3CEDC'}}; }));
+    if(edgesDS) edgesDS.update(c.edges.map(function(e,i){ var on=e.t<=p, col=ecol(e);
+      return {id:i, color:{color:on?col:'#E6ECF3'}, label:on?e.label:' ', font:{color:on?col:'#E6ECF3',strokeWidth:4,strokeColor:'#fff'}}; }));
     var n=(c.ticks||[]).length, tk=(c.ticks&&c.ticks[p])||{label:'',date:''};
     el('asof').textContent='passo '+(p+1)+'/'+n+(tk.date?' · '+tk.date:'');
     el('asof-desc').textContent=tk.label||'';
@@ -248,7 +237,10 @@ _JS = """
 def gerar(cases, totals, out_path):
     cases_js = json.dumps(cases, ensure_ascii=False)
     totals_js = json.dumps(totals, ensure_ascii=False)
-    script = ("<script>(function(){var CASES=" + cases_js +
+    # vis-network em bundle LOCAL (offline). O painel é gerado em
+    # demo/demo_data/, logo a lib em demo/vendor/ fica em ../vendor/.
+    vis = '<script src="../vendor/vis-network.min.js"></script>'
+    script = (vis + "<script>(function(){var CASES=" + cases_js +
               ";var TOTALS=" + totals_js + ";" + _JS + "})();</script>")
     doc = ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
            '<meta name="viewport" content="width=device-width, initial-scale=1">'
