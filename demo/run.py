@@ -401,6 +401,13 @@ def run(target, keep=False):
         print(f"  Caso · {dev_n} ({dev_l}): {len(alerts)} fraude(s) "
               f"[{', '.join(a['tipo'] for a in alerts)}]")
 
+    # Filtra casos-fragmento (1 alerta, sem triangulação) — são pernas de
+    # cascata/doação que ganharam devedor_alvo próprio. Mantém os casos reais
+    # (com ficha completa) e evita combos poluídos com entradas "—".
+    ricos = [c for c in cases if len(c["alerts"]) >= 2]
+    if ricos:
+        cases = ricos
+
     total_fraudes = sum(len(c["alerts"]) for c in cases)
     total_crit = sum(1 for c in cases for a in c["alerts"] if a["sev"] == "CRITICA")
     totals = {"cases": len(cases), "fraudes": total_fraudes, "criticas": total_crit}

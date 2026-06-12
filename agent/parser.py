@@ -32,7 +32,9 @@ _DATE_RE = re.compile(r"\b(\d{2}/\d{2}/\d{4})\b")
 
 _FAMILIA = ("cunhado", "cunhada", "irmão", "irmao", "irmã", "irma",
             "esposa", "marido", "filho", "filha", "pai", "mãe", "mae",
-            "sogro", "sogra", "genro", "nora", "parente")
+            "sogro", "sogra", "genro", "nora", "parente",
+            "primo", "prima", "sobrinho", "sobrinha", "tio", "tia",
+            "neto", "neta", "avô", "avo", "avó", "padrasto", "enteado")
 _MARCO_JUDICIAL = ("penhora", "citação", "citacao", "bloqueio judicial",
                    "arresto", "indisponibilidade")
 
