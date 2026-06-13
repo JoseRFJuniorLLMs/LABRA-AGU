@@ -344,7 +344,9 @@ _JS = """
     sel.value=active; setScrub(scrubMax());
   }
   var gbox=el('graphbox'), fsbtn=el('fs-btn');
-  function fsApply(){ var on=gbox.classList.contains('fs'); fsbtn.textContent=on?'✕ Voltar':'⛶ Tela cheia'; if(net){ setTimeout(function(){ try{ net.redraw(); net.fit(); }catch(e){} },70); } }
+  function fsApply(){ var on=gbox.classList.contains('fs'); fsbtn.textContent=on?'✕ Voltar':'⛶ Tela cheia';
+    var sc=el('scrubber'); if(sc) sc.style.display=on?'none':'';  // some em tela cheia (não sobrepõe o grafo)
+    if(net){ setTimeout(function(){ try{ net.redraw(); net.fit(); }catch(e){} },70); } }
   if(fsbtn) fsbtn.onclick=function(){ gbox.classList.toggle('fs'); fsApply(); };
   document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && gbox.classList.contains('fs')){ gbox.classList.remove('fs'); fsApply(); } });
   var stabbtn=el('stab-btn'), pOn=true;
