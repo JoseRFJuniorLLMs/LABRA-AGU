@@ -108,6 +108,10 @@ Além do estado das tabelas, o agente ingere **trilhas de auditoria / change-log
 | `agent/evidence_scorer.py` | Força probatória por qualidade da fonte (rastreada por ULID) |
 | `agent/legal_mapper.py` | Subsunção do fato à norma (tipificação + dispositivo legal) |
 | `agent/theory_builder.py` | Sintetiza a Teoria do Caso (narrativa + matriz + minuta) |
+| `agent/network_analysis.py` | **Redes entre casos**: facilitador partilhado + anéis (comunidades) |
+| `agent/recovery.py` | **Quantificação** do valor dissipado + fila priorizada |
+| `agent/feedback.py` | **Loop de feedback**: aprende a precisão de cada padrão pelo veredicto |
+| `agent/entity_resolution.py` | **ER fuzzy**: sugere entidades quase-idênticas para revisão |
 | `evaluation/` | **Harness de avaliação**: cenários rotulados + precisão/recall/F1 |
 | `dashboard/` | Dashboard React/Vite (timeline, grafo causal, alertas) |
 
@@ -121,6 +125,7 @@ Além do estado das tabelas, o agente ingere **trilhas de auditoria / change-log
 | `test_multidoc.py` | **Correlação multi-documento**, dedup, proveniência composta, boost de diretriz |
 | `test_parser_patterns.py` | Parser robusto a quebras de linha; cada padrão (incl. suborno, antedatação, registo apagado); ACT-R; relatório |
 | `test_eval_gate.py` | **Gate de acurácia**: corre o harness e falha se a deteção degradar (zero FP, recall ≥ 0.90) |
+| `test_phase3.py` | Redes entre casos (facilitador/anel), valor dissipado + fila, feedback e ER fuzzy |
 
 **End-to-end** (contra servidor real; cada um sobe o seu próprio servidor isolado):
 
@@ -134,9 +139,25 @@ Além do estado das tabelas, o agente ingere **trilhas de auditoria / change-log
 Cada e2e sobe o seu próprio `heraclitus-server` isolado (localizado por `HERACLITUS_SERVER_BIN` ou ao lado do repo HeraclitusDB):
 
 ```bash
-pytest tests/             # 54 unitários, em qualquer máquina
+pytest tests/             # 63 unitários, em qualquer máquina
 python test_multibank.py  # e2e multi-fonte (sobe o servidor automaticamente)
 ```
+
+## Fase 3 — inteligência de rede, priorização e aprendizado
+
+Três capacidades que vão além de detetar um caso isolado (demo: `py demo/demo_fase3.py`):
+
+- **Redes entre casos** (`agent/network_analysis.py`) — olha o grafo **global** e
+  acha o **facilitador partilhado** (a mesma offshore/laranja/procurador a servir
+  vários devedores — a "fábrica de laranjas") e os **anéis** (comunidades por
+  *label propagation*). Apanhar o operador vale mais do que apanhar um peão.
+- **Quantificação + fila priorizada** (`agent/recovery.py`) — estima o **valor
+  dissipado** por caso e ordena por prioridade (valor × severidade × prova).
+  Transforma 5.000 alertas "todos críticos" numa ordem de ataque com cifras.
+- **Loop de feedback + ER fuzzy** (`agent/feedback.py`, `agent/entity_resolution.py`)
+  — cada alerta confirmado/refutado recalibra a **precisão empírica** do padrão
+  (Bayes com suavização, reconstruível por replay); e a resolução **fuzzy** sugere
+  laranjas com o nome ligeiramente alterado que escapariam à correspondência exata.
 
 ## Avaliação — a deteção é medida, não afirmada
 
