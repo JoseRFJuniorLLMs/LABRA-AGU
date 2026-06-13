@@ -166,7 +166,12 @@ _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
 _ORDEM = ["triangulacao_offshore", "vespera_constricao",
           "fracionamento", "laranja_familiar",
           "offshore_cascata", "doacao_cruzada", "holding_usufruto",
-          "fraude_inss"]
+          "fraude_inss",
+          # cobertura ampliada (bens, beneficiário final, contexto BR)
+          "bem_preco_vil", "bem_a_interposto", "ubo_cadeia_profunda",
+          "controle_circular", "patrimonio_incompativel", "passivo_simulado",
+          "offramp_cripto", "contrato_direcionado", "vinculo_por_atributo",
+          "mula_financeira", "anomalia_judiciaria"]
 
 
 def _sqlite_url(path: str) -> str:
@@ -314,20 +319,22 @@ def run(target, keep=False):
     print(f"  {n} itens ingeridos. O agente vai correlacionar tudo.")
 
     banner("5 · O AGENTE FECHA AS FRAUDES — por caso, com proveniência")
-    # Poll até o número de insights estabilizar.
-    seen, stable, rows = -1, 0, []
-    deadline = time.time() + 25
+    # Espera DETERMINÍSTICA: o daemon tem de consumir até ao topo do log
+    # ingerido antes de lermos os insights — senão lê-se a meio do
+    # processamento de um documento grande e perdem-se padrões (race).
+    # O daemon emite insights que ELE PRÓPRIO recebe (a cabeça do log sobe
+    # enquanto ele trabalha). Espera-se até ele estar OCIOSO: processado tudo,
+    # inclusive os próprios insights (processed_lsn alcança a cabeça atual).
+    deadline = time.time() + 40
     while time.time() < deadline:
-        rows = [r for r in client.query(
-            'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
-            if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")]
-        if len(rows) == seen:
-            stable += 1
-        else:
-            stable, seen = 0, len(rows)
-        if stable >= 3 and seen > 0:
+        head = client.snapshot()
+        if daemon.metrics.get("processed_lsn", 0) >= head:
             break
-        time.sleep(0.5)
+        time.sleep(0.2)
+    time.sleep(0.5)  # settle final
+    rows = [r for r in client.query(
+        'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
+        if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")]
     if not rows:
         print("  ⚠ Nenhum insight — verifique o servidor.")
         daemon.stop(); t.join(timeout=5)

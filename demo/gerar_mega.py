@@ -181,6 +181,41 @@ def main():
         bk = reg(cnpj())
         L.append(f"{fachadas[i % len(fachadas)]} transferiu {big()} para {bk}, banco recebedor.")
 
+    # ── COBERTURA AMPLIADA: bens, renda×patrimônio, cripto, passivo, contrato,
+    #    ciclo, atributo, mula (todos os detectores novos, no caso central) ──
+    # renda declarada incompatível com o patrimônio adquirido pelo devedor
+    L.append(f"{D} declara renda anual de {_brl(180_000)}.")
+    L.append(f"{O2} transferiu o IMOVEL_MANSAO_ALTO para {D} por {_brl(15_000_000)}.")
+    L.append(f"O IMOVEL_MANSAO_ALTO está avaliado em {_brl(15_000_000)}.")
+    # bem de luxo alienado a preço vil ao laranja familiar (venda simulada)
+    L.append(f"{D} transferiu o IMOVEL_IATE_MARINA para {LAR} por {_brl(90_000)}.")
+    L.append(f"O IMOVEL_IATE_MARINA está avaliado em {_brl(11_000_000)}.")
+    # off-ramp em criptoativos para o cunhado (interposto)
+    L.append(f"{D} converteu {_brl(3_000_000)} em criptomoedas e repassou a {LAR}.")
+    # passivo simulado: dívida confessada ao laranja familiar
+    L.append(f"{D} confessou dívida de {_brl(5_000_000)} a {LAR}.")
+    # controle circular: trio de offshores em participação cruzada (C1→C2→C3→C1);
+    # mantém a cascata O2..O5 LINEAR para também disparar o beneficiário final (UBO)
+    C1, C2, C3 = reg(cnpj()), reg(cnpj()), reg(cnpj())
+    L.append(f"{D} controla a offshore {C1}.")
+    L.append(f"{C1} controla a offshore {C2}.")
+    L.append(f"{C2} controla a offshore {C3}.")
+    L.append(f"{C3} controla a offshore {C1}.")
+    # contrato público direcionado (fornecedor de fachada criado às vésperas)
+    ORG, FORN = reg(cnpj()), reg(cnpj())
+    L.append(f"A empresa {FORN} foi constituída em 02/04/2026.")
+    L.append(f"O órgão {ORG} contratou {FORN} por {_brl(8_000_000)} em 20/04/2026.")
+    L.append(f"{D} controla o fornecedor {FORN}.")
+    # vínculo oculto por atributo compartilhado entre fachadas + fluxo entre elas
+    L.append(f"{fachadas[0]} e {fachadas[1]} compartilham o mesmo endereço.")
+    L.append(f"{fachadas[0]} transferiu {_brl(2_000_000)} para {fachadas[1]}.")
+    # conta de passagem / mula financeira (rede PIX)
+    MULA = reg(cpf())
+    for _ in range(3):
+        L.append(f"{reg(cpf())} transferiu {_brl(7_000)} para {MULA}.")
+    for _ in range(3):
+        L.append(f"{MULA} transferiu {_brl(7_000)} para {reg(cpf())}.")
+
     with open(os.path.join(entrada, "mega_caso.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
 

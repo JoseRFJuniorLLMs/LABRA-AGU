@@ -59,6 +59,10 @@ class AgentDaemon:
             "insights_emitted": 0,
             "errors": 0,
             "head_lsn": 0,
+            # LSN+1 do último evento JÁ PROCESSADO por completo (emissão
+            # incluída). head_lsn marca a receção; este marca a conclusão —
+            # é o sinal correto para quem espera o daemon "alcançar" o log.
+            "processed_lsn": 0,
         }
 
     # compat com código/teste que lê estes atributos
@@ -168,6 +172,8 @@ class AgentDaemon:
                         self._emit(insight)
         except Exception as e:  # noqa: BLE001 — um doc ruim não derruba o daemon
             self._deadletter(lsn, f"live:{type(e).__name__}:{e}", ep)
+        # marca a CONCLUSÃO do processamento deste evento (emissão incluída)
+        self.metrics["processed_lsn"] = lsn + 1
 
     def _emit(self, insight: dict):
         lsn = self.client.append_insight(insight)
