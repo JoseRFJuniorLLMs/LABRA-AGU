@@ -30,12 +30,12 @@ _CSS = """<style>
   .stat{background:#fff;border:1px solid #D8E0EA;border-radius:12px;padding:14px 18px;flex:1;min-width:140px;}
   .stat .n{font-size:1.7rem;font-weight:800;}
   .stat .l{color:#5B6B7B;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;}
-  .case-bar{display:flex;align-items:center;gap:10px;margin:18px 0 4px;flex-wrap:wrap;}
   .case-lbl{font-size:.8rem;color:#5B6B7B;}
-  .case-bar select{font-size:.85rem;padding:8px 12px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#1B2B40;min-width:340px;max-width:100%;cursor:pointer;}
-  .asof{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:.85rem;color:#5B6B7B;}
+  .asof{display:flex;align-items:center;gap:8px;margin:14px 0 12px;font-size:.85rem;color:#5B6B7B;flex-wrap:wrap;}
   .asof b{color:#0C326F;font-size:1rem;}
-  .asof .desc{margin-left:auto;color:#1B2B40;}
+  .asof .desc{color:#1B2B40;}
+  .asof .case-pick{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .asof .case-pick select{font-size:.85rem;padding:6px 10px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#1B2B40;min-width:240px;max-width:100%;cursor:pointer;}
   .stage{display:flex;gap:18px;margin-right:160px;}
   .panel{flex:1;background:#fff;border:1px solid #D8E0EA;border-radius:14px;padding:12px;box-shadow:0 1px 2px #0c326f0f;}
   .alerts-live{display:flex;flex-wrap:wrap;gap:7px;padding:10px 6px 4px;min-height:34px;}
@@ -94,6 +94,8 @@ _CSS = """<style>
   .stab-btn{position:absolute;top:38px;right:8px;z-index:5;background:#fff;border:1px solid #D8E0EA;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;color:#0C326F;}
   .stab-btn:hover{background:#F7F9FC;}
   .stab-btn.frozen{color:#C0392B;}
+  .align-btn{position:absolute;top:68px;right:8px;z-index:5;background:#fff;border:1px solid #D8E0EA;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;color:#0C326F;}
+  .align-btn:hover{background:#F7F9FC;}
   .graphbox.fs{position:fixed;inset:0;z-index:200;background:#fff;padding:10px;border-radius:0;}
   .graphbox.fs .netg{height:calc(100vh - 20px);}
   #tip{position:fixed;z-index:300;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
@@ -119,21 +121,17 @@ _HTML = """<body>
     <div class="stat"><div class="n" style="color:#1351B4">4</div><div class="l">Fontes correlacionadas</div></div>
   </div>
 
-  <div class="case-bar" id="case-bar">
-    <span class="case-lbl">Caso investigado</span>
-    <select id="case-select"></select>
-  </div>
-
   <h2>Ficha do Caso — quem é quem</h2>
   <div class="ficha" id="ficha"></div>
 
   <h2>Linha do Tempo — Reconstrução AS OF (arraste a barra)</h2>
-  <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
+  <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span><span class="case-pick" id="case-bar"><span class="case-lbl">Caso investigado</span><select id="case-select"></select></span></div>
   <div class="stage">
     <div class="panel">
       <div id="graphbox" class="graphbox">
         <button id="fs-btn" class="fs-btn" title="Tela cheia">⛶ Tela cheia</button>
         <button id="stab-btn" class="stab-btn" title="Congelar movimento das arestas">❄ Congelar arestas</button>
+        <button id="align-btn" class="align-btn" title="Reorganizar e centrar o grafo">⟲ Auto-alinhar</button>
         <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
       </div>
       <div class="alerts-live" id="alerts-live"></div>
@@ -271,6 +269,13 @@ _JS = """
   document.addEventListener('keydown',function(ev){ if(ev.key==='Escape' && gbox.classList.contains('fs')){ gbox.classList.remove('fs'); fsApply(); } });
   var stabbtn=el('stab-btn'), pOn=true;
   if(stabbtn) stabbtn.onclick=function(){ pOn=!pOn; stabbtn.textContent=pOn?'❄ Congelar arestas':'▶ Descongelar'; stabbtn.className='stab-btn'+(pOn?'':' frozen'); if(net){ net.setOptions({physics:{enabled:pOn}}); } };
+  // Auto-alinhar: re-corre o solver de física (reorganiza), volta a ligar a
+  // física (sincroniza o botão de congelar) e centra a vista no grafo.
+  var alignbtn=el('align-btn');
+  if(alignbtn) alignbtn.onclick=function(){ if(!net) return;
+    pOn=true; stabbtn.textContent='❄ Congelar arestas'; stabbtn.className='stab-btn';
+    net.setOptions({physics:{enabled:true}}); net.stabilize();
+    setTimeout(function(){ try{ net.fit({animation:{duration:500}}); }catch(e){} }, 300); };
   var btn=el('btn-llm');
   if(btn) btn.onclick=function(){ var cmd='py main.py --daemon --llm';
     try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
