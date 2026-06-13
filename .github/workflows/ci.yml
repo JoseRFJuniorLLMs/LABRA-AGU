@@ -5,17 +5,46 @@ on:
   pull_request:
 
 jobs:
-  unit:
-    name: Testes unitários
+  lint:
+    name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Instalar dependências de núcleo + testes
+      - run: pip install ruff
+      - name: ruff check
+        run: ruff check .
+
+  test:
+    name: Testes + cobertura + gate de acurácia
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências de núcleo + testes
         run: |
           python -m pip install --upgrade pip
-          pip install grpcio==1.62.1 grpcio-tools==1.62.1 pydantic==2.6.4 pytest
-      - name: Testes unitários (offline, sem servidor)
-        run: python -m pytest tests/ -q
+          pip install grpcio==1.62.1 grpcio-tools==1.62.1 pydantic==2.6.4 pytest pytest-cov
+      - name: Testes unitários + cobertura (offline, sem servidor)
+        run: python -m pytest tests/ -q --cov=agent --cov=evaluation --cov-report=term-missing
+      - name: Avaliação de detectores (precisão/recall/F1)
+        run: python evaluation/run_eval.py -v
+
+  quality:
+    name: Type-check + segurança (informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install mypy pydantic pip-audit grpcio==1.62.1
+      - name: mypy (lenient, informativo)
+        run: mypy agent/ evaluation/ || true
+      - name: pip-audit (vulnerabilidades nas dependências de núcleo)
+        run: pip-audit || true

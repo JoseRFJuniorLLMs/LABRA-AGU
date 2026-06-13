@@ -44,15 +44,24 @@ class HeraclitusClient:
         ca_cert = ca_cert or os.environ.get("HERACLITUS_CA_CERT")
         token = token or os.environ.get("HERACLITUS_TOKEN")
 
+        # Limite de mensagem gRPC. O default (4 MB) estoura em consultas amplas
+        # (ex.: MATCH (n) RETURN n sobre um log de produção já com dezenas de
+        # milhares de eventos) com RESOURCE_EXHAUSTED. O log é append-only e só
+        # cresce, logo elevamos o teto de RECEÇÃO (e envio) para 256 MB.
+        _MAX_MSG = int(os.environ.get(
+            "HERACLITUS_MAX_MSG_BYTES", str(256 * 1024 * 1024)))
+        _opts = [("grpc.max_receive_message_length", _MAX_MSG),
+                 ("grpc.max_send_message_length", _MAX_MSG)]
+
         if tls:
             creds_kwargs = {}
             if ca_cert:
                 with open(ca_cert, "rb") as f:
                     creds_kwargs["root_certificates"] = f.read()
             creds = grpc.ssl_channel_credentials(**creds_kwargs)
-            self.channel = grpc.secure_channel(target, creds)
+            self.channel = grpc.secure_channel(target, creds, options=_opts)
         else:
-            self.channel = grpc.insecure_channel(target)
+            self.channel = grpc.insecure_channel(target, options=_opts)
 
         # Autenticação por bearer token (metadata em cada chamada). Nunca enviar
         # credenciais em claro: se há token mas o canal é inseguro, avisa.

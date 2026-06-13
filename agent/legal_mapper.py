@@ -157,6 +157,40 @@ MAPPING: Dict[str, List[dict]] = {
          "ementa": "Conta de passagem para fracionar e dispersar recursos, "
                    "típica de redes de mulas financeiras."},
     ],
+    "antedatacao": [
+        {"tipo": "Fraude à execução",
+         "dispositivo": "CPC, art. 792",
+         "ementa": "Ato de disposição patrimonial retroagido após a constrição "
+                   "para simular anterioridade é ineficaz perante o exequente."},
+        {"tipo": "Falsidade documental",
+         "dispositivo": "CP, arts. 297 e 299",
+         "ementa": "Adulteração da data de registro (público ou particular) "
+                   "para alterar fato juridicamente relevante."},
+    ],
+    "registro_apagado": [
+        {"tipo": "Supressão de documento",
+         "dispositivo": "CP, art. 305",
+         "ementa": "Destruir, suprimir ou ocultar registro de que não podia "
+                   "dispor, em benefício próprio, após o marco da execução."},
+        {"tipo": "Fraude à execução",
+         "dispositivo": "CPC, art. 792"},
+    ],
+    "suborno": [
+        {"tipo": "Corrupção ativa",
+         "dispositivo": "CP, art. 333",
+         "ementa": "Oferecer ou prometer vantagem indevida a funcionário "
+                   "público para determiná-lo a praticar, omitir ou retardar "
+                   "ato de ofício."},
+        {"tipo": "Improbidade administrativa",
+         "dispositivo": "Lei 8.429/92, arts. 9º e 11",
+         "ementa": "Vantagem indevida a agente público configura "
+                   "enriquecimento ilícito e viola os princípios da "
+                   "administração pública."},
+        {"tipo": "Responsabilização da pessoa jurídica",
+         "dispositivo": "Lei 12.846/13 (Lei Anticorrupção), art. 5º",
+         "ementa": "Prometer ou dar vantagem indevida a agente público "
+                   "responsabiliza objetivamente a pessoa jurídica."},
+    ],
 }
 
 

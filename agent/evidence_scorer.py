@@ -16,7 +16,7 @@ A fonte de cada ULID vem dos `attrs` do evento (source/table/doc_ref), que o
 pipeline grava na ingestão. O score de uma tese é a média dos pesos das suas
 provas.
 """
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 # Pesos por categoria (sobrescrevíveis no construtor).
 DEFAULT_WEIGHTS: Dict[str, float] = {

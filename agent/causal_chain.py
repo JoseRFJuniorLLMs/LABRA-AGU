@@ -19,7 +19,7 @@ Saída de `build_chain`: lista de `{'from_ulid', 'to_ulid', 'mechanism'}`
 (+ 'entity' / 'date'), pronta para o litigator citar o encadeamento.
 """
 from collections import defaultdict
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from .entities import normalize_id
 from .graph import CaseGraph

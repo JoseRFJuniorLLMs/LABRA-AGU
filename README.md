@@ -73,9 +73,16 @@ Guia passo a passo, com exemplos de saída, consultas GQL, como criar padrões n
 | `triangulacao_offshore` | Quotas vendidas a entidade que nomeia procurador com plenos poderes | ALTA (CRITICA se familiar) |
 | `fracionamento` | ≥3 transferências abaixo do limiar COAF somando valor relevante (smurfing) | ALTA |
 | `laranja_familiar` | Plenos poderes outorgados a familiar do devedor (interposta pessoa) | ALTA |
-| `vespera_constricao` | Dissipação patrimonial até 30 dias antes de penhora/citação/bloqueio | CRITICA |
+| `vespera_constricao` | Dissipação patrimonial até 30 dias antes de penhora/citação/bloqueio (por devedor) | CRITICA |
+| `suborno` | Pagamento de propina / vantagem indevida a agente público (corrupção ativa) | CRITICA |
+| `antedatacao` | Data de um registo **retroagida** para antes do marco, mas a edição feita **depois** dele | CRITICA |
+| `registro_apagado` | Registo **apagado** (DELETE no change-log) em/após o marco judicial — destruição de prova | CRITICA |
 
-Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutorial, secção 8](docs/TUTORIAL.md#8-criando-um-padrão-de-fraude-novo)).
+Os três últimos juntam-se aos esquemas avançados de `agent/asset_shield.py` (doação cruzada, holding/usufruto, offshore em cascata, beneficiário final…) e à cobertura do contexto BR em `agent/coverage.py` (renda×patrimônio, contrato direcionado, cripto, mula financeira…). Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutorial, secção 8](docs/TUTORIAL.md#8-criando-um-padrão-de-fraude-novo)).
+
+### Histórico de mudanças (CDC) — não só o estado atual
+
+Além do estado das tabelas, o agente ingere **trilhas de auditoria / change-log** (`UPDATE`/`DELETE` por registo, com *quem*, *quando* e *de→para*). É o histórico — não a foto atual — que denuncia **antedatação** e **destruição de prova**: uma venda que *parece* anterior à penhora, mas cujo registo foi editado depois dela, só aparece **cruzando o banco com o log**. A demo isolada [`demo/demo_antedatacao.py`](demo/demo_antedatacao.py) sobe um servidor temporário, cruza um `junta.db` com um change-log e mostra a proveniência a apontar para as duas fontes (`['alteracoes', 'file']`); ao correr, gera um log de exemplo em `demo/exemplo_audit_junta.log`.
 
 ## Componentes
 
@@ -97,6 +104,11 @@ Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutoria
 | `agent/daemon.py` | Loop event-sourcing (reconstrói → reconcilia → vive), robusto a falhas |
 | `agent/report.py` | Gerador do relatório pericial |
 | `agent/client.py` | SDK gRPC do HeraclitusDB (custódia por ULID, TLS, consulta auditada) |
+| `agent/anomaly_engine.py` | Deteção **indutiva** (z-scores, pontos de articulação, estruturação) |
+| `agent/evidence_scorer.py` | Força probatória por qualidade da fonte (rastreada por ULID) |
+| `agent/legal_mapper.py` | Subsunção do fato à norma (tipificação + dispositivo legal) |
+| `agent/theory_builder.py` | Sintetiza a Teoria do Caso (narrativa + matriz + minuta) |
+| `evaluation/` | **Harness de avaliação**: cenários rotulados + precisão/recall/F1 |
 | `dashboard/` | Dashboard React/Vite (timeline, grafo causal, alertas) |
 
 ## Testes
@@ -107,7 +119,8 @@ Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutoria
 |---|---|
 | `test_entities.py` | Normalização e validação de CPF/CNPJ; o mesmo CPF colapsa num id |
 | `test_multidoc.py` | **Correlação multi-documento**, dedup, proveniência composta, boost de diretriz |
-| `test_parser_patterns.py` | Parser robusto a quebras de linha; cada padrão; ACT-R; relatório |
+| `test_parser_patterns.py` | Parser robusto a quebras de linha; cada padrão (incl. suborno, antedatação, registo apagado); ACT-R; relatório |
+| `test_eval_gate.py` | **Gate de acurácia**: corre o harness e falha se a deteção degradar (zero FP, recall ≥ 0.90) |
 
 **End-to-end** (contra servidor real; cada um sobe o seu próprio servidor isolado):
 
@@ -121,9 +134,24 @@ Padrão novo = uma função e uma entrada no catálogo. Nada mais muda ([tutoria
 Cada e2e sobe o seu próprio `heraclitus-server` isolado (localizado por `HERACLITUS_SERVER_BIN` ou ao lado do repo HeraclitusDB):
 
 ```bash
-pytest tests/             # 21 unitários, em qualquer máquina
+pytest tests/             # 54 unitários, em qualquer máquina
 python test_multibank.py  # e2e multi-fonte (sobe o servidor automaticamente)
 ```
+
+## Avaliação — a deteção é medida, não afirmada
+
+A pasta `evaluation/` torna a deteção **verificável**: cenários rotulados (positivos *e* negativos) com o conjunto de padrões que cada um deve disparar, e um harness que calcula **precisão / recall / F1 por padrão** — 100% offline (sem servidor), via `Investigator` em memória.
+
+```bash
+python evaluation/run_eval.py        # tabela de métricas
+python evaluation/run_eval.py -v     # + cada cenário (FP/FN)
+```
+
+Os **negativos** (atividade legítima) medem falsos positivos/especificidade. O `tests/test_eval_gate.py` transforma isto num **gate de regressão** no CI: qualquer alteração que baixe a qualidade quebra o build. Para cobrir um padrão novo, acrescente um cenário em `evaluation/scenarios.py`.
+
+## Qualidade / CI
+
+O [CI](.github/workflows/ci.yml) corre em cada push/PR: **lint** (`ruff`, bloqueante), **testes + cobertura** (`pytest-cov`) + a **avaliação de detectores**, e ainda **type-check** (`mypy`) e **auditoria de dependências** (`pip-audit`) em modo informativo. Localmente: `ruff check .` e `pytest tests/`.
 
 ## Produção (AGU/INSS)
 

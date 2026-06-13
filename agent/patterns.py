@@ -153,7 +153,11 @@ def detect_vespera_constricao(g: CaseGraph) -> List[dict]:
     if not marcos:
         return []
 
-    suspeitas = []  # (src, dst, events)
+    # Agrupa as suspeitas POR DEVEDOR (quem movimenta = src). Antes o detector
+    # colapsava tudo num único achado atribuído a suspeitas[0][0] — logo, com
+    # vários casos, só um devedor recebia o alerta. Agora cada devedor com
+    # movimentação na véspera gera o seu próprio achado.
+    por_devedor: Dict[str, list] = defaultdict(list)  # src -> [(dst, events)]
     def _check(d_str, src, dst, events):
         if not d_str:
             return
@@ -163,7 +167,7 @@ def detect_vespera_constricao(g: CaseGraph) -> List[dict]:
             return
         for m in marcos:
             if timedelta(0) <= (m - dt) <= timedelta(days=JANELA_VESPERA_DIAS):
-                suspeitas.append((src, dst, set(events)))
+                por_devedor[src].append((dst, set(events)))
                 return
 
     for t in g.transactions:
@@ -171,28 +175,166 @@ def detect_vespera_constricao(g: CaseGraph) -> List[dict]:
     for venda in g.rels("VENDEDOR_QUOTAS"):
         _check(venda["date"], venda["src"], venda["dst"], venda["events"])
 
-    if not suspeitas:
+    if not por_devedor:
         return []
-    envolvidos = sorted({s for s, _, _ in suspeitas} | {d for _, d, _ in suspeitas})
-    events = set(g.marcos_events())
-    for _, _, evs in suspeitas:
-        events |= evs
-    return [{
-        "pattern": "vespera_constricao",
-        "severidade": "CRITICA",
-        "envolvidos": envolvidos,
-        "devedor_alvo": suspeitas[0][0],
-        "source_events": events,
-        "descricao": (
-            f"{len(suspeitas)} movimentação(ões) patrimonial(is) realizadas "
-            f"até {JANELA_VESPERA_DIAS} dias antes de marco judicial "
-            f"({', '.join(marcos_raw)})."
-        ),
-        "conclusao_juridica": (
-            "Fraude à execução (art. 792 CPC / art. 185 CTN): alienação ou "
-            "oneração de bens na iminência de constrição judicial conhecida."
-        ),
-    }]
+    out = []
+    for devedor in sorted(por_devedor):
+        movs = por_devedor[devedor]
+        envolvidos = [devedor] + sorted({d for d, _ in movs})
+        events = set(g.marcos_events())
+        for _, evs in movs:
+            events |= evs
+        out.append({
+            "pattern": "vespera_constricao",
+            "severidade": "CRITICA",
+            "envolvidos": envolvidos,
+            "devedor_alvo": devedor,
+            "source_events": events,
+            "descricao": (
+                f"{len(movs)} movimentação(ões) patrimonial(is) de {devedor} "
+                f"realizada(s) até {JANELA_VESPERA_DIAS} dias antes de marco "
+                f"judicial ({', '.join(marcos_raw)})."
+            ),
+            "conclusao_juridica": (
+                "Fraude à execução (art. 792 CPC / art. 185 CTN): alienação ou "
+                "oneração de bens na iminência de constrição judicial conhecida."
+            ),
+        })
+    return out
+
+
+def detect_suborno(g: CaseGraph) -> List[dict]:
+    """Pagamento de propina/vantagem indevida a agente público (corrupção
+    ativa). O pagador é, tipicamente, o mesmo devedor que blinda o patrimônio:
+    o suborno e a triangulação fecham, juntos, o esquema de captura do agente
+    público + esvaziamento patrimonial. Cada perna pode vir de fonte distinta."""
+    out = []
+    for s in g.rels("SUBORNO"):
+        pagador, agente = s["src"], s["dst"]
+        valor = s.get("value")
+        out.append({
+            "pattern": "suborno",
+            "severidade": "CRITICA",
+            "envolvidos": [pagador, agente],
+            "devedor_alvo": pagador,
+            "source_events": set(s["events"]),
+            "descricao": (
+                f"{pagador} pagou propina"
+                + (f" de R$ {valor:,.2f}" if valor else "")
+                + f" ao agente público {agente}"
+                + (f" em {s['date']}" if s.get("date") else "") + "."
+            ),
+            "conclusao_juridica": (
+                "Corrupção ativa (CP, art. 333) e ato de improbidade: "
+                "vantagem indevida a agente público em contrapartida a "
+                "favorecimento, com lesão ao erário e quebra da moralidade "
+                "administrativa."
+            ),
+        })
+    return out
+
+
+def _marcos_dates(g: CaseGraph) -> List[date]:
+    out = []
+    for m in g.marcos_datas():
+        try:
+            out.append(date.fromisoformat(m))
+        except ValueError:
+            continue
+    return out
+
+
+def detect_antedatacao(g: CaseGraph) -> List[dict]:
+    """Antedatação fraudulenta: o histórico (CDC/trilha do banco) mostra que a
+    DATA de um registo foi ALTERADA para ANTES de um marco judicial, mas a
+    própria alteração foi feita DEPOIS do marco. O estado atual do banco parece
+    limpo (venda "antiga"); só cruzando o registo do banco com o log de
+    mudanças a fraude aparece — esvaziamento patrimonial disfarçado de negócio
+    anterior à execução."""
+    marcos = _marcos_dates(g)
+    if not marcos:
+        return []
+    out = []
+    for a in g.alteracoes:
+        if a.get("operacao") != "UPDATE" or "data" not in (a.get("campo") or ""):
+            continue
+        try:
+            d_new = date.fromisoformat(a["para"])
+            t_chg = date.fromisoformat(a["em"])
+        except (ValueError, TypeError):
+            continue
+        for m in marcos:
+            # data nova é anterior/igual ao marco, mas a edição foi feita depois
+            if d_new <= m <= t_chg:
+                ent = a["entidade"]
+                events = set(a["events"]) | set(g.marcos_events())
+                # liga ao registo DO BANCO que foi antedatado (mesma entidade)
+                for v in g.rels("VENDEDOR_QUOTAS"):
+                    if v["src"] == ent:
+                        events |= set(v["events"])
+                de_txt = f" (era {a.get('de')})" if a.get("de") else ""
+                out.append({
+                    "pattern": "antedatacao",
+                    "severidade": "CRITICA",
+                    "envolvidos": [ent],
+                    "devedor_alvo": ent,
+                    "source_events": events,
+                    "descricao": (
+                        f"Registro de {ent} teve a data alterada para "
+                        f"{a['para']}{de_txt} em {a['em']} — DEPOIS do marco "
+                        f"judicial de {m.isoformat()}. Antedatação para simular "
+                        f"negócio anterior à execução."
+                    ),
+                    "conclusao_juridica": (
+                        "Fraude à execução com adulteração de registro (CPC, "
+                        "art. 792; CP, arts. 297/299 — falsidade documental): a "
+                        "data foi retroagida após a constrição para forjar "
+                        "anterioridade do ato."
+                    ),
+                })
+                break
+    return out
+
+
+def detect_registro_apagado(g: CaseGraph) -> List[dict]:
+    """Destruição de prova: registo APAGADO (DELETE no log) em data igual ou
+    posterior a um marco judicial — sumiço deliberado de movimentação do radar
+    depois de a execução ser conhecida."""
+    marcos = _marcos_dates(g)
+    if not marcos:
+        return []
+    out = []
+    for a in g.alteracoes:
+        if a.get("operacao") != "DELETE":
+            continue
+        try:
+            t_chg = date.fromisoformat(a["em"])
+        except (ValueError, TypeError):
+            continue
+        for m in marcos:
+            if t_chg >= m:
+                ent = a["entidade"]
+                events = set(a["events"]) | set(g.marcos_events())
+                tab = a.get("tabela") or "registro"
+                out.append({
+                    "pattern": "registro_apagado",
+                    "severidade": "CRITICA",
+                    "envolvidos": [ent],
+                    "devedor_alvo": ent,
+                    "source_events": events,
+                    "descricao": (
+                        f"Registro de {ent} na fonte '{tab}' foi APAGADO em "
+                        f"{a['em']} — em/após o marco judicial de "
+                        f"{m.isoformat()}. Destruição de prova."
+                    ),
+                    "conclusao_juridica": (
+                        "Fraude processual e supressão de documento (CP, art. "
+                        "305): eliminação de registro após o conhecimento da "
+                        "execução, para subtrair movimentação ao rastreamento."
+                    ),
+                })
+                break
+    return out
 
 
 PATTERNS: Dict[str, Callable[[CaseGraph], List[dict]]] = {
@@ -200,4 +342,7 @@ PATTERNS: Dict[str, Callable[[CaseGraph], List[dict]]] = {
     "fracionamento": detect_fracionamento,
     "laranja_familiar": detect_laranja_familiar,
     "vespera_constricao": detect_vespera_constricao,
+    "suborno": detect_suborno,
+    "antedatacao": detect_antedatacao,
+    "registro_apagado": detect_registro_apagado,
 }

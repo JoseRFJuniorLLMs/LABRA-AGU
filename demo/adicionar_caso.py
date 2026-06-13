@@ -38,6 +38,7 @@ def adicionar_um(rng, data, entrada):
     dev = gerar_cpf_valido(rng)   # devedor
     lar = gerar_cpf_valido(rng)   # laranja (cunhado)
     off = gerar_cnpj_valido(rng)  # offshore
+    agt = gerar_cpf_valido(rng)   # agente público subornado
 
     # JUNTA — venda de quotas (CPF do devedor FORMATADO).
     cotas = rng.choice([60000, 72000, 85000, 90000, 95000, 110000, 125000])
@@ -68,8 +69,37 @@ def adicionar_um(rng, data, entrada):
     with open(os.path.join(entrada, f"vinculos_{lar[-4:]}.txt"),
               "w", encoding="utf-8") as f:
         f.write(doc)
+
+    # DOCUMENTO — corrupção ativa: propina do devedor a um agente público
+    # (valor distinto por caso para não colidir na resolução de entidades).
+    propina = rng.choice([120_000, 180_000, 250_000, 320_000, 450_000])
+    # Formato brasileiro (250.000,00) — o que _VALUE_RE do parser reconhece.
+    propina_br = f"{propina:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    doc_sub = (
+        "RELATÓRIO COAF/CGU — INDÍCIO DE CORRUPÇÃO ATIVA.\n"
+        f"Apurou-se que {dev} pagou propina de R$ {propina_br} ao agente "
+        f"público {agt} em 20/05/2026, em contrapartida ao favorecimento na "
+        "liberação de registros e à demora proposital na constrição dos bens.\n"
+    )
+    with open(os.path.join(entrada, f"suborno_{agt[-4:]}.txt"),
+              "w", encoding="utf-8") as f:
+        f.write(doc_sub)
+
+    # LOG DE MUDANÇAS (CDC) — a data da venda (12/05) foi antedatada por UPDATE
+    # em 10/06 (após a penhora de 05/06); e um registo COAF foi apagado em 12/06.
+    dev_fmt = fmt_cpf(dev)
+    audit = (
+        "# TRILHA DE AUDITORIA (CDC) — Sistema Registral / Junta Comercial\n"
+        f"2026-06-10 14:32:11 UPDATE alteracoes registro de {dev_fmt} "
+        "campo=data de=08/06/2026 para=12/05/2026 por=op_junta_47\n"
+        f"2026-06-12 09:15:02 DELETE coaf registro de {dev_fmt} "
+        "campo=movimentacao por=op_coaf_12\n"
+    )
+    with open(os.path.join(entrada, f"auditoria_{dev[-4:]}.log"),
+              "w", encoding="utf-8") as f:
+        f.write(audit)
     return {"devedor": dev, "devedor_fmt": fmt_cpf(dev),
-            "laranja": lar, "offshore": fmt_cnpj(off)}
+            "laranja": lar, "offshore": fmt_cnpj(off), "agente": agt}
 
 
 def main():

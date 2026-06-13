@@ -1,0 +1,27 @@
+[project]
+name = "labra-agu"
+version = "0.2.0"
+description = "Agente forense de blindagem patrimonial sobre HeraclitusDB (event-sourced)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+# Protobuffers gerados não são para lint.
+extend-exclude = ["agent/heraclitus_pb2.py", "agent/heraclitus_pb2_grpc.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# E501 (linha longa): o código tem strings jurídicas/PT longas, deliberado.
+# E402 (import não no topo): scripts em demo/ e evaluation/ ajustam sys.path
+#   ANTES de importar — intencional.
+# E702 (; numa linha): usado em poucos pontos de layout compacto (ex.: run.py).
+ignore = ["E501", "E402", "E702"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+follow_imports = "silent"
+# Lenient por agora (informativo). Apertar gradualmente por módulo.
+disable_error_code = ["var-annotated", "assignment", "arg-type", "index"]
+exclude = "agent/heraclitus_pb2.*\\.py$"

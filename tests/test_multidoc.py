@@ -76,7 +76,7 @@ def test_entidades_mesmo_cpf_formas_diferentes_um_no():
     # Mesma pessoa, grafias diferentes em documentos diferentes.
     inv.process_document(_doc(
         "CPF_529.982.247-25 transferiu quotas para CNPJ_11.222.333/0001-81.", "X1"))
-    out = inv.process_document(_doc(
+    inv.process_document(_doc(
         "A CNPJ_11.222.333/0001-81 nomeou 529.982.247-25 com plenos poderes.", "X2"))
     # O devedor (vendedor) e o procurador resolvem para o mesmo CPF canónico
     # -> laranja (auto-procuração) é detectável porque é UM só nó.

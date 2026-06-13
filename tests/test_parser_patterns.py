@@ -2,8 +2,11 @@
 from agent.graph import CaseGraph
 from agent.parser import parse_document
 from agent.patterns import (
+    detect_antedatacao,
     detect_fracionamento,
     detect_laranja_familiar,
+    detect_registro_apagado,
+    detect_suborno,
     detect_triangulacao_offshore,
     detect_vespera_constricao,
 )
@@ -55,6 +58,75 @@ def test_vespera_constricao():
     g = _g("Houve penhora em 10/06/2026. CPF_DEV transferiu R$ 5.000,00 para "
            "CNPJ_X em 01/06/2026.")
     achados = detect_vespera_constricao(g)
+    assert achados and achados[0]["severidade"] == "CRITICA"
+
+
+def test_vespera_por_devedor_nao_colapsa():
+    # Dois devedores distintos movimentando na véspera → DOIS achados, cada um
+    # atribuído ao seu devedor (regressão: antes colapsava num só).
+    g = _g("Houve penhora em 10/06/2026. "
+           "CPF_DEV1 transferiu R$ 5.000,00 para CNPJ_X em 01/06/2026. "
+           "CPF_DEV2 transferiu R$ 7.000,00 para CNPJ_Y em 02/06/2026.")
+    achados = detect_vespera_constricao(g)
+    alvos = {a["devedor_alvo"] for a in achados}
+    assert alvos == {"CPF_DEV1", "CPF_DEV2"}, alvos
+
+
+def test_parser_extrai_suborno_valor_e_data():
+    doc = parse_document(
+        "CPF_DEV pagou propina de R$ 250.000,00 ao agente público "
+        "CPF_AGENTE em 20/05/2026.", "EV")
+    subs = [r for r in doc.relations if r.relation_type == "SUBORNO"]
+    assert len(subs) == 1
+    assert subs[0].value == 250000.0
+    assert subs[0].date == "2026-05-20"
+
+
+def test_suborno_critico():
+    g = _g("CPF_DEV pagou suborno de R$ 80.000,00 ao agente público "
+           "CPF_AGENTE em 03/06/2026.")
+    achados = detect_suborno(g)
+    assert achados and achados[0]["severidade"] == "CRITICA"
+    # devedor_alvo é o pagador (agrupa no caso do devedor, não do agente)
+    assert achados[0]["devedor_alvo"] == achados[0]["envolvidos"][0]
+
+
+def test_suborno_nao_dispara_sem_gatilho():
+    # transferência comum (sem "propina/suborno") não é corrupção ativa
+    g = _g("CPF_DEV transferiu R$ 80.000,00 para CPF_AGENTE em 03/06/2026.")
+    assert detect_suborno(g) == []
+
+
+_LOG_UPDATE = ("2026-06-10 14:32:11 UPDATE alteracoes registro de CPF_DEV "
+               "campo=data de=08/06/2026 para=01/05/2026 por=op_47")
+_LOG_DELETE = ("2026-06-12 09:15:02 DELETE coaf registro de CPF_DEV "
+               "campo=movimentacao por=op_12")
+_PENHORA = "Consta ordem de penhora em 05/06/2026 sobre os bens do executado."
+
+
+def test_parser_extrai_alteracao_update_e_delete():
+    doc = parse_document(_LOG_UPDATE + "\n" + _LOG_DELETE, "EV")
+    ops = {a.operacao for a in doc.alteracoes}
+    assert ops == {"UPDATE", "DELETE"}
+    up = next(a for a in doc.alteracoes if a.operacao == "UPDATE")
+    assert up.campo == "data" and up.para == "2026-05-01" and up.em == "2026-06-10"
+
+
+def test_antedatacao_cruza_log_e_marco():
+    # data nova (01/05) ANTES do marco (05/06), mas editada (10/06) DEPOIS dele
+    g = _g(_PENHORA + "\n" + _LOG_UPDATE)
+    achados = detect_antedatacao(g)
+    assert achados and achados[0]["severidade"] == "CRITICA"
+
+
+def test_antedatacao_nao_dispara_sem_marco():
+    g = _g(_LOG_UPDATE)  # sem penhora não há antedatação a aferir
+    assert detect_antedatacao(g) == []
+
+
+def test_registro_apagado_apos_marco():
+    g = _g(_PENHORA + "\n" + _LOG_DELETE)  # DELETE 12/06 >= penhora 05/06
+    achados = detect_registro_apagado(g)
     assert achados and achados[0]["severidade"] == "CRITICA"
 
 

@@ -13,7 +13,7 @@ def extract_text_from_file(file_path: str) -> str:
     ext = file_path.lower().split('.')[-1]
 
     try:
-        if ext in ['txt', 'csv']:
+        if ext in ['txt', 'csv', 'log']:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
 
@@ -50,7 +50,7 @@ def extract_text_from_file(file_path: str) -> str:
         else:
             logging.warning(f"Formato não suportado para extração: {ext}")
             return ""
-            
+
     except Exception as e:
         logging.error(f"Erro ao extrair texto de {file_path}: {e}")
         return ""

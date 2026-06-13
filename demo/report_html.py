@@ -34,8 +34,9 @@ _CSS = """<style>
   .asof{display:flex;align-items:center;gap:8px;margin:14px 0 12px;font-size:.85rem;color:#5B6B7B;flex-wrap:wrap;}
   .asof b{color:#0C326F;font-size:1rem;}
   .asof .desc{color:#1B2B40;}
-  .asof .case-pick{margin-left:auto;display:flex;align-items:center;gap:8px;}
-  .asof .case-pick select{font-size:.85rem;padding:6px 10px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#1B2B40;min-width:240px;max-width:100%;cursor:pointer;}
+  .case-top{display:flex;justify-content:center;align-items:center;gap:10px;margin:0 160px 16px 0;}
+  .case-top .case-lbl{font-size:.8rem;color:#5B6B7B;text-transform:uppercase;letter-spacing:.04em;}
+  .case-top select{font-size:.9rem;padding:7px 12px;border-radius:8px;border:1px solid #D8E0EA;background:#fff;color:#0C326F;font-weight:600;min-width:320px;max-width:100%;cursor:pointer;box-shadow:0 1px 2px #0c326f0f;}
   .stage{display:flex;gap:18px;margin-right:160px;}
   .panel{flex:1;background:#fff;border:1px solid #D8E0EA;border-radius:14px;padding:12px;box-shadow:0 1px 2px #0c326f0f;}
   .alerts-live{display:flex;flex-wrap:wrap;gap:7px;padding:10px 6px 4px;min-height:34px;}
@@ -125,7 +126,8 @@ _HTML = """<body>
   <div class="ficha" id="ficha"></div>
 
   <h2>Linha do Tempo — Reconstrução AS OF (arraste a barra)</h2>
-  <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span><span class="case-pick" id="case-bar"><span class="case-lbl">Caso investigado</span><select id="case-select"></select></span></div>
+  <div class="case-top" id="case-bar"><span class="case-lbl">Caso investigado</span><select id="case-select"></select></div>
+  <div class="asof"><span>AS OF</span><b id="asof"></b><span class="desc" id="asof-desc"></span></div>
   <div class="stage">
     <div class="panel">
       <div id="graphbox" class="graphbox">
@@ -211,7 +213,9 @@ _JS = """
 
   // ── grafo dinâmico via vis-network (física, nós arrastáveis, sem sobreposição) ──
   function fcol(c,n){ return n.id===c.devedor_id?'#C0392B':((n.kind||'').indexOf('JURIDICA')>=0?'#1351B4':'#B9770E'); }
-  function ecol(e){ return (e.kind==='VENDEDOR_QUOTAS'||e.kind==='PROCURADOR_COM_PODERES'||e.kind==='FAMILIAR')?'#C0392B':'#B9770E'; }
+  function ecol(e){ var k=e.kind||'';
+    if(k.indexOf('REGISTRO')>=0) return '#8E24AA';  // roxo: mudança no histórico (CDC)
+    return (k==='VENDEDOR_QUOTAS'||k==='PROCURADOR_COM_PODERES'||k==='FAMILIAR')?'#C0392B':'#B9770E'; }
   function renderGraph(c){
     appearT={}; appearT[c.devedor_id]=0;
     c.edges.forEach(function(e){ [e.src,e.dst].forEach(function(id){ if(appearT[id]===undefined||e.t<appearT[id]) appearT[id]=e.t; }); });
@@ -220,9 +224,9 @@ _JS = """
       return {id:n.id, label:short(n.label,16)+'\\n'+n.id_fmt, shape:'dot', size:(n.id===c.devedor_id?20:14),
         color:{background:'#fff',border:col,highlight:{background:'#F7F9FC',border:col}}, borderWidth:2.6,
         font:{size:11,color:'#1B2B40'}}; }));
-    edgesDS=new vis.DataSet(c.edges.map(function(e,i){ var col=ecol(e);
-      return {id:i, from:e.src, to:e.dst, label:e.label, arrows:'to', color:{color:col,highlight:col},
-        font:{size:10,color:col,strokeWidth:4,strokeColor:'#fff'}, smooth:{type:'dynamic'}, width:1.6}; }));
+    edgesDS=new vis.DataSet(c.edges.map(function(e,i){ var col=ecol(e), reg=(e.kind||'').indexOf('REGISTRO')>=0;
+      return {id:i, from:e.src, to:e.dst, label:e.label, arrows:'to', dashes:reg, color:{color:col,highlight:col},
+        font:{size:10,color:col,strokeWidth:4,strokeColor:'#fff'}, smooth:{type:'dynamic'}, width:reg?2.4:1.6}; }));
     if(net) net.destroy();
     net=new vis.Network(gdiv, {nodes:nodesDS, edges:edgesDS}, {
       physics:{barnesHut:{springLength:155,avoidOverlap:0.5}, stabilization:{iterations:240}},

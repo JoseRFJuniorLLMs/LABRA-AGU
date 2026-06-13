@@ -16,7 +16,7 @@ A resolução de entidades (entities.py) garante que o mesmo CPF, escrito de
 formas diferentes em fontes diferentes, é um único nó.
 """
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set
 
 from .entities import entity_kind, normalize_id
 from .parser import ParsedDocument
@@ -42,6 +42,10 @@ class CaseGraph:
         # Atributos por entidade (renda anual, data de constituição, …) — base
         # para a compatibilidade renda×patrimônio e contrato direcionado.
         self.entity_attrs: Dict[str, dict] = defaultdict(dict)
+        # Mudanças no histórico das fontes (CDC / trilha de auditoria): cada
+        # uma é {operacao, entidade, tabela, campo, de, para, em, usuario,
+        # events}. É o que revela antedatação e destruição de prova.
+        self.alteracoes: List[dict] = []
 
     # ── ingestão ──────────────────────────────────────────────────────
     def ingest(self, doc: ParsedDocument) -> Set[str]:
@@ -93,6 +97,16 @@ class CaseGraph:
             cid = normalize_id(ea.id)
             val = ea.value_num if ea.value_num is not None else ea.value_str
             self.entity_attrs[cid][ea.key] = val
+            touched.add(cid)
+
+        for al in getattr(doc, "alteracoes", []):
+            cid = normalize_id(al.entidade)
+            self.alteracoes.append({
+                "operacao": al.operacao, "entidade": cid, "tabela": al.tabela,
+                "campo": al.campo, "de": al.de, "para": al.para, "em": al.em,
+                "usuario": al.usuario, "events": {ev},
+            })
+            self.mentions[cid] += 1
             touched.add(cid)
 
         return touched

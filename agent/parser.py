@@ -91,6 +91,22 @@ class EntityAttr(BaseModel):
     value_str: Optional[str] = None
 
 
+class RegistroAlterado(BaseModel):
+    """Uma MUDANÇA num registo de uma fonte (CDC / trilha de auditoria do
+    banco): INSERT/UPDATE/DELETE, com o valor antigo e o novo e QUANDO a
+    alteração foi feita. É o histórico — não o estado atual — que denuncia
+    antedatação (data empurrada para o passado) e destruição de prova (DELETE
+    após marco judicial)."""
+    operacao: str                    # INSERT | UPDATE | DELETE
+    entidade: str                    # id afetado pelo registo
+    tabela: Optional[str] = None     # tabela/origem (ex.: alteracoes, coaf)
+    campo: Optional[str] = None      # campo alterado (ex.: data, valor)
+    de: Optional[str] = None         # valor antigo (ISO se data)
+    para: Optional[str] = None       # valor novo (ISO se data)
+    em: Optional[str] = None         # QUANDO a alteração foi feita (ISO)
+    usuario: Optional[str] = None    # quem alterou
+
+
 class ParsedDocument(BaseModel):
     entities: List[Entity]
     relations: List[Relation]
@@ -100,12 +116,7 @@ class ParsedDocument(BaseModel):
     assets: List[Asset] = []
     asset_transfers: List[AssetTransfer] = []
     entity_attrs: List[EntityAttr] = []
-    # Sinal de confiança da extração (1.0 = alta). O parser determinístico é
-    # frágil a redações fora dos gatilhos canónicos: quando há vários
-    # identificadores mas poucos/nenhuns fatos, marca para REVISÃO HUMANA em
-    # vez de produzir um grafo incompleto em silêncio.
-    confidence: float = 1.0
-    needs_review: bool = False
+    alteracoes: List[RegistroAlterado] = []  # CDC / trilha de auditoria
     # Sinal de confiança da extração (1.0 = alta). O parser determinístico é
     # frágil a redações fora dos gatilhos canónicos: quando há vários
     # identificadores mas poucos/nenhuns fatos, marca para REVISÃO HUMANA em
@@ -188,6 +199,35 @@ _INSS_RE = re.compile(
     rf"({_ID})(?:(?!{_ID}).)*?\bdesviou\b(?:(?!{_ID}).)*?\bINSS\b"
     rf"(?:(?!{_ID}).)*?\bpara\b\s+(?:a\s+|o\s+)?({_ID})",
     re.IGNORECASE | re.DOTALL,
+)
+# Corrupção ativa: "<pagador> pagou propina/suborno de R$ <valor> a/ao agente
+# público <agente>". O valor é capturado inline (g2); a data vem da janela.
+# Gatilhos: propina, suborno, subornou, vantagem indevida. O destino é o id
+# IMEDIATAMENTE após o gatilho (sem outro id no meio) — o agente público.
+_SUBORNO_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\b(?:propina|suborno|subornou|vantagem\s+indevida)\b"
+    rf"(?:(?!{_ID}).)*?R\$\s?([\d.]+,\d{{2}})"
+    rf"(?:(?!{_ID}).)*?({_ID})",
+    re.IGNORECASE | re.DOTALL,
+)
+# Trilha de auditoria / CDC do banco-fonte. Formato estruturado (uma linha por
+# mudança), p.ex.:
+#   2026-06-10 14:32:11 UPDATE alteracoes registro de 104.332.181-00 \
+#       campo=data de=08/06/2026 para=01/05/2026 por=op_junta_47
+#   2026-06-12 09:15:02 DELETE coaf registro de 104.332.181-00 \
+#       campo=movimentacao por=op_coaf_12
+# UPDATE captura: (1)quando (2)tabela (3)id (4)campo (5)de (6)para (7)usuario.
+_ALTERACAO_UPDATE_RE = re.compile(
+    rf"(\d{{4}}-\d{{2}}-\d{{2}})[ T]\d{{2}}:\d{{2}}:\d{{2}}\s+UPDATE\s+(\w+)\s+"
+    rf"registro\s+de\s+({_ID})\s+campo=(\w+)\s+de=([\d/]+)\s+para=([\d/]+)\s+"
+    rf"por=(\S+)",
+    re.IGNORECASE,
+)
+# DELETE captura: (1)quando (2)tabela (3)id (4)campo? (5)usuario.
+_ALTERACAO_DELETE_RE = re.compile(
+    rf"(\d{{4}}-\d{{2}}-\d{{2}})[ T]\d{{2}}:\d{{2}}:\d{{2}}\s+DELETE\s+(\w+)\s+"
+    rf"registro\s+de\s+({_ID})(?:\s+campo=(\w+))?\s+por=(\S+)",
+    re.IGNORECASE,
 )
 
 # ── Bens (ATIVOS) ──────────────────────────────────────────────────────
@@ -372,6 +412,29 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
         relations.append(Relation(
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
             relation_type="DESVIO_INSS", date=_data_apos(m)))
+    for m in _SUBORNO_RE.finditer(flat):  # pagador (g1) → agente público (g3)
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(3)),
+            relation_type="SUBORNO", value=_to_float(m.group(2)),
+            date=_data_apos(m)))
+
+    # CDC / trilha de auditoria do banco: mudanças (UPDATE/DELETE) no histórico.
+    alteracoes: List[RegistroAlterado] = []
+    for m in _ALTERACAO_UPDATE_RE.finditer(flat):
+        campo = (m.group(4) or "").lower()
+        de_raw, para_raw = m.group(5), m.group(6)
+        # se o campo é uma data, normaliza de/para para ISO; senão deixa cru.
+        de_v = _to_iso(de_raw) if "data" in campo else de_raw
+        para_v = _to_iso(para_raw) if "data" in campo else para_raw
+        alteracoes.append(RegistroAlterado(
+            operacao="UPDATE", entidade=_trim(m.group(3)), tabela=m.group(2),
+            campo=campo, de=de_v, para=para_v, em=m.group(1),
+            usuario=m.group(7)))
+    for m in _ALTERACAO_DELETE_RE.finditer(flat):
+        alteracoes.append(RegistroAlterado(
+            operacao="DELETE", entidade=_trim(m.group(3)), tabela=m.group(2),
+            campo=(m.group(4) or "").lower() or None, em=m.group(1),
+            usuario=m.group(5)))
 
     # Bens (ATIVOS): alienações e avaliações. O bem passa a ser um nó.
     assets: dict = {}
@@ -440,6 +503,7 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
         assets=list(assets.values()),
         asset_transfers=asset_transfers,
         entity_attrs=entity_attrs,
+        alteracoes=alteracoes,
         confidence=confidence,
         needs_review=needs_review,
     )

@@ -44,7 +44,10 @@ from agent.graph_timeline import GraphTimeline  # noqa: E402
 
 _EDGE_BASE = {"PROCURADOR_COM_PODERES": "procurador", "FAMILIAR": "cunhado",
               "DOACAO": "doou bem", "ADMINISTRA": "usufruto/admin",
-              "CONTROLA": "controla", "DESVIO_INSS": "desvio INSS"}
+              "CONTROLA": "controla", "DESVIO_INSS": "desvio INSS",
+              "SUBORNO": "propina",
+              "REGISTRO_ALTERADO": "✎ registro alterado",
+              "REGISTRO_APAGADO": "✖ registro apagado"}
 
 
 def _br(dt):
@@ -63,6 +66,13 @@ def _subgraph(g, devedor, cotas_map):
     for t in g.transactions:
         ev = min(t["events"]) if t["events"] else ""
         eds.append([t["src"], t["dst"], "TRANSFERENCIA", t.get("value"), t.get("date"), ev])
+    # Mudanças do histórico (CDC): self-loop no registo afetado, datado por
+    # QUANDO a alteração foi feita (em) — aparece tarde na timeline, após o marco.
+    for a in g.alteracoes:
+        ev = min(a["events"]) if a["events"] else ""
+        ent = a["entidade"]
+        kind = "REGISTRO_APAGADO" if a.get("operacao") == "DELETE" else "REGISTRO_ALTERADO"
+        eds.append([ent, ent, kind, None, a.get("em"), ev])
     adj = _dd(set)
     for s, d, *_ in eds:
         adj[s].add(d); adj[d].add(s)
@@ -100,24 +110,30 @@ def _subgraph(g, devedor, cotas_map):
               "DOACAO": "doação a interposta pessoa",
               "ADMINISTRA": "usufruto / administração vitalícia",
               "CONTROLA": "controle em cascata",
-              "DESVIO_INSS": "desvio de benefícios do INSS"}
+              "DESVIO_INSS": "desvio de benefícios do INSS",
+              "SUBORNO": "pagamento de propina a agente público",
+              "REGISTRO_ALTERADO": "registro adulterado (antedatação)",
+              "REGISTRO_APAGADO": "registro apagado (destruição de prova)"}
     ticks = []
     for d in dates:
         kinds = {e[2] for e in eds if e[4] == d}
         cnt = _Counter(e[2] for e in eds if e[4] == d)
-        
+
         if not d:
             lab = "Documentos iniciais"
         else:
             lab = ("Venda de quotas" if "VENDEDOR_QUOTAS" in kinds else
                    "Procuração" if "PROCURADOR_COM_PODERES" in kinds else
+                   "Registro alterado" if "REGISTRO_ALTERADO" in kinds else
+                   "Registro apagado" if "REGISTRO_APAGADO" in kinds else
                    "Fracionamento" if "TRANSFERENCIA" in kinds else "Documento (vínculos)")
-        
+
         fr = []
         if cnt.get("TRANSFERENCIA"):
             fr.append(f"{cnt['TRANSFERENCIA']} transferências fracionadas")
         for k in ("VENDEDOR_QUOTAS", "PROCURADOR_COM_PODERES", "FAMILIAR",
-                  "DOACAO", "ADMINISTRA", "CONTROLA", "DESVIO_INSS"):
+                  "DOACAO", "ADMINISTRA", "CONTROLA", "DESVIO_INSS", "SUBORNO",
+                  "REGISTRO_ALTERADO", "REGISTRO_APAGADO"):
             if cnt.get(k):
                 fr.append(_FRASE[k])
         ticks.append({"label": lab, "date": _br(d) if d else "Início",
@@ -163,7 +179,8 @@ def _md_to_html(md: str) -> str:
     return "\n".join(out)
 
 _SEVRANK = {"CRITICA": 2, "ALTA": 1, "MEDIA": 0, "BAIXA": -1}
-_ORDEM = ["triangulacao_offshore", "vespera_constricao",
+_ORDEM = ["triangulacao_offshore", "suborno", "antedatacao",
+          "registro_apagado", "vespera_constricao",
           "fracionamento", "laranja_familiar",
           "offshore_cascata", "doacao_cruzada", "holding_usufruto",
           "fraude_inss",
@@ -394,10 +411,7 @@ def run(target, keep=False):
                            "descricao": p.get("descricao", "").strip(),
                            "conclusao": p.get("conclusao_juridica", ""),
                            "fontes": fontes, "n_prov": nprov})
-        valor, count = _frac_info(alerts)
-        cotas = cotas_map.get(dev_c)
-        lbl_venda = (f"{cotas:,}".replace(",", ".") + " cotas") if cotas else "venda de quotas"
-        lbl_frac = (f"{count}× {valor}") if valor != "—" else "fracionamento"
+        valor, _ = _frac_info(alerts)
         teo = teorias.get(dev_c)
         minuta_html = _md_to_html(teo.minuta) if teo else ""
         matriz = ([{"tipo": a["pattern"], "sev": a["severidade"],
@@ -416,12 +430,9 @@ def run(target, keep=False):
         print(f"  Caso · {dev_n} ({dev_l}): {len(alerts)} fraude(s) "
               f"[{', '.join(a['tipo'] for a in alerts)}]")
 
-    # Filtra casos-fragmento (1 alerta, sem triangulação) — são pernas de
-    # cascata/doação que ganharam devedor_alvo próprio. Mantém os casos reais
-    # (com ficha completa) e evita combos poluídos com entradas "—".
-    ricos = [c for c in cases if len(c["alerts"]) >= 2]
-    if ricos:
-        cases = ricos
+    # (Filtro de casos-fragmento DESATIVADO a pedido: o painel mostra TODOS os
+    # casos detectados, inclusive os de 1 só alerta. Para voltar a esconder os
+    # fragmentos, restaurar: cases = [c for c in cases if len(c["alerts"]) >= 2].)
 
     total_fraudes = sum(len(c["alerts"]) for c in cases)
     total_crit = sum(1 for c in cases for a in c["alerts"] if a["sev"] == "CRITICA")

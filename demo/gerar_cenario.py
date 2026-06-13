@@ -11,11 +11,12 @@ fecha:
   Cartório (SQL)         : a offshore nomeia o cunhado como procurador
   COAF (SQL)             : 3 transferências fracionadas (smurfing)
   Documento (pasta)      : o vínculo familiar + a véspera da penhora
+  Documento (pasta)      : propina do devedor a um agente público
 
-As frases (templates SQL e o texto do documento) seguem EXATAMENTE o que o
-parser determinístico do agente reconhece, de modo que os quatro padrões
+As frases (templates SQL e o texto dos documentos) seguem EXATAMENTE o que o
+parser determinístico do agente reconhece, de modo que os cinco padrões
 disparam: triangulacao_offshore (CRÍTICA), laranja_familiar (ALTA),
-fracionamento (ALTA) e vespera_constricao (CRÍTICA).
+fracionamento (ALTA), vespera_constricao (CRÍTICA) e suborno (CRÍTICA).
 
 Usa apenas a biblioteca-padrão.
 """
@@ -86,7 +87,7 @@ def construir(base_dir=None, seed=42):
     # Limpa documentos de casos antigos (adicionar_caso.py) — o caso base é
     # sempre determinístico: 1 caso, sem resíduos de execuções anteriores.
     for _f in os.listdir(entrada):
-        if _f.endswith(".txt"):
+        if _f.endswith((".txt", ".log")):
             try:
                 os.remove(os.path.join(entrada, _f))
             except OSError:
@@ -96,6 +97,7 @@ def construir(base_dir=None, seed=42):
     cpf_devedor = gerar_cpf_valido(rng)   # João Ribeiro (executado fiscal)
     cpf_laranja = gerar_cpf_valido(rng)   # Carlos Silva (cunhado / laranja)
     cnpj_offshore = gerar_cnpj_valido(rng)  # Atlantic Holdings Inc
+    cpf_agente = gerar_cpf_valido(rng)    # Agente público subornado
 
     # ── JUNTA COMERCIAL: venda de quotas (CPF do devedor FORMATADO) ──
     # O CPF vai formatado aqui e CRU no documento → a resolução de entidades
@@ -139,12 +141,43 @@ def construir(base_dir=None, seed=42):
     with open(os.path.join(entrada, "vinculos.txt"), "w", encoding="utf-8") as f:
         f.write(doc)
 
+    # ── DOCUMENTO (fonte separada): corrupção ativa — propina a agente ──
+    # público. Mesmo devedor (pagador); frase no formato que _SUBORNO_RE
+    # reconhece: "<pagador> pagou propina de R$ <valor> ao agente público
+    # <agente> em <data>". Data dentro da janela da véspera (penhora 05/06).
+    doc_sub = (
+        "RELATÓRIO COAF/CGU — INDÍCIO DE CORRUPÇÃO ATIVA.\n"
+        f"Apurou-se que {cpf_devedor} pagou propina de R$ 250.000,00 ao "
+        f"agente público {cpf_agente} em 20/05/2026, em contrapartida ao "
+        "favorecimento na liberação de registros e à demora proposital na "
+        "constrição dos bens.\n"
+    )
+    with open(os.path.join(entrada, "suborno.txt"), "w", encoding="utf-8") as f:
+        f.write(doc_sub)
+
+    # ── LOG DE MUDANÇAS (CDC): trilha de auditoria do sistema registral ──
+    # A venda no banco está datada 12/05/2026 (parece anterior à penhora). O
+    # log revela que essa data foi EDITADA em 10/06 (de 08/06 → 12/05), depois
+    # da penhora de 05/06 = antedatação. E um registo do COAF foi APAGADO em
+    # 12/06 = destruição de prova. Cruza com junta.db (mesmo devedor).
+    dev_fmt = fmt_cpf(cpf_devedor)
+    audit = (
+        "# TRILHA DE AUDITORIA (CDC) — Sistema Registral / Junta Comercial\n"
+        f"2026-06-10 14:32:11 UPDATE alteracoes registro de {dev_fmt} "
+        "campo=data de=08/06/2026 para=12/05/2026 por=op_junta_47\n"
+        f"2026-06-12 09:15:02 DELETE coaf registro de {dev_fmt} "
+        "campo=movimentacao por=op_coaf_12\n"
+    )
+    with open(os.path.join(entrada, "auditoria.log"), "w", encoding="utf-8") as f:
+        f.write(audit)
+
     ids = {
         "devedor": cpf_devedor,
         "devedor_fmt": fmt_cpf(cpf_devedor),
         "laranja": cpf_laranja,
         "offshore": cnpj_offshore,
         "offshore_fmt": fmt_cnpj(cnpj_offshore),
+        "agente": cpf_agente,
     }
     paths = {
         "data": data, "entrada": entrada,
@@ -161,6 +194,7 @@ if __name__ == "__main__":
     print(f"  Devedor  (João Ribeiro) : {ids['devedor_fmt']}  [cru: {ids['devedor']}]")
     print(f"  Laranja  (Carlos, cunhado): {ids['laranja']}")
     print(f"  Offshore (Atlantic Holdings): {ids['offshore_fmt']}")
+    print(f"  Agente público (subornado): {ids['agente']}")
     print(f"\n  Bancos + documento em: {paths['data']}")
     # Comando de diretriz pronto a copiar (alvo = devedor).
     cmd = (f"python directive.py --alvo CPF_{ids['devedor']} "

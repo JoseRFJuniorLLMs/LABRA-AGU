@@ -22,3 +22,11 @@ openai
 
 # Testes
 pytest
+
+# Qualidade / dev (opcional — usados no CI)
+#   ruff: lint   ·   mypy: type-check   ·   pytest-cov: cobertura
+#   pip-audit: vulnerabilidades nas dependências
+ruff
+mypy
+pytest-cov
+pip-audit

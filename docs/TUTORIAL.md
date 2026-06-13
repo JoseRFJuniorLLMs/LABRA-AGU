@@ -236,7 +236,9 @@ Efeitos imediatos no daemon:
    resultou*.
 
 Padrões disponíveis para `--padrao`: `triangulacao_offshore`,
-`fracionamento`, `laranja_familiar`, `vespera_constricao`.
+`fracionamento`, `laranja_familiar`, `vespera_constricao`, `suborno`,
+`antedatacao`, `registro_apagado` (mais os de `agent/asset_shield.py` e
+`agent/coverage.py`).
 
 ## 8. Criando um padrão de fraude novo
 

@@ -19,7 +19,7 @@ Saída: `TheoryOfCase` (narrativa, alvos, matriz de evidências ordenada por
 força probatória, anomalias, nexo, provas essenciais, reincidência e minuta).
 """
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import List, Optional
 
 from .anomaly_engine import AnomalyEngine
