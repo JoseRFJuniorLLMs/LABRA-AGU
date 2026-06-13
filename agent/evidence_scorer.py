@@ -66,10 +66,14 @@ class EvidenceScorer:
             return self.source_map.get(ulid)
         if self.client is None:
             return None
-        if self._index is None:  # cache: um único MATCH e indexa por id
+        # Busca SÓ os ULIDs pedidos (a proveniência de cada tese), ponto a
+        # ponto e com cache — em vez de varrer o log inteiro. Escala com o
+        # número de provas, não com o tamanho do banco.
+        if self._index is None:
             self._index = {}
-            for r in self.client.query("MATCH (n) RETURN n"):
-                self._index[r.get("id")] = r.get("attrs", {})
+        if ulid not in self._index:
+            r = self.client.get_event(ulid)
+            self._index[ulid] = (r or {}).get("attrs", {}) if r else None
         return self._index.get(ulid)
 
     def weight_of(self, ulid: str) -> Optional[float]:

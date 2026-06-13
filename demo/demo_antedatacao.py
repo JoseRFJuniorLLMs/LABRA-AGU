@@ -143,7 +143,7 @@ def main() -> int:
         rows = [r for r in client.query(
             'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
             if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")]
-        all_rows = {r["id"]: r for r in client.query("MATCH (n) RETURN n")}
+        all_rows = {r["id"]: r for r in client.scan_all()}  # paginado
         achados = {}
         for r in rows:
             p = json.loads(r["content"])

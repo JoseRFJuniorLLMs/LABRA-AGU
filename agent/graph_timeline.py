@@ -100,7 +100,7 @@ class GraphTimeline:
             return []
         checkpoints = sorted(set(int(x) for x in lsns))
         rows = sorted(
-            self.client.query("MATCH (n) RETURN n"),
+            self.client.scan_all(),  # paginado (cursor por LSN), já em ordem
             key=lambda x: x.get("lsn", 0))
         out: List[Tuple[int, CaseGraph]] = []
         g = CaseGraph()

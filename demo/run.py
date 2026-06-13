@@ -392,7 +392,7 @@ def run(target, keep=False):
         daemon.stop(); t.join(timeout=5)
         return 1
 
-    all_rows = {r["id"]: r for r in client.query("MATCH (n) RETURN n")}
+    all_rows = {r["id"]: r for r in client.scan_all()}  # paginado, sem teto de msg
 
     # Agrupa por caso (devedor_alvo); por tipo, guarda o insight MAIS severo.
     cases_map = {}

@@ -91,7 +91,7 @@ class TheoryBuilder:
         """Busca o log UMA vez (MATCH (n)) se for preciso reconstruir o grafo.
         Com `graph` ou `rows` já dados, não toca no servidor."""
         if graph is None and rows is None:
-            return self.client.query("MATCH (n) RETURN n")
+            return list(self.client.scan_all())  # paginado (cursor por LSN)
         return rows
 
     def _load_memory(self, rows):

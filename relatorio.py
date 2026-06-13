@@ -49,9 +49,9 @@ if __name__ == "__main__":
 
     insight = _por_id(client, insights, args.insight)
     prov = client.provenance(args.insight)
-    # Resolve os documentos-fonte para detalhar a custódia
-    all_rows = client.query("MATCH (n) RETURN n")
-    fontes = {r["id"]: r for r in all_rows if r["id"] in set(prov)}
+    # Resolve só os documentos-fonte da proveniência (point-fetch por ULID),
+    # em vez de varrer o log inteiro.
+    fontes = client.get_events(prov)
 
     md = gerar_relatorio_md(insight, prov, fontes)
     if args.out:

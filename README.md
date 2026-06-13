@@ -103,7 +103,7 @@ Além do estado das tabelas, o agente ingere **trilhas de auditoria / change-log
 | `agent/act_r.py` | Ativação de memória ACT-R (com boost dirigido) |
 | `agent/daemon.py` | Loop event-sourcing (reconstrói → reconcilia → vive), robusto a falhas |
 | `agent/report.py` | Gerador do relatório pericial |
-| `agent/client.py` | SDK gRPC do HeraclitusDB (custódia por ULID, TLS, consulta auditada) |
+| `agent/client.py` | SDK gRPC do HeraclitusDB (custódia por ULID, TLS, consulta auditada, **leitura paginada**) |
 | `agent/anomaly_engine.py` | Deteção **indutiva** (z-scores, pontos de articulação, estruturação) |
 | `agent/evidence_scorer.py` | Força probatória por qualidade da fonte (rastreada por ULID) |
 | `agent/legal_mapper.py` | Subsunção do fato à norma (tipificação + dispositivo legal) |
@@ -185,5 +185,16 @@ O [CI](.github/workflows/ci.yml) corre em cada push/PR: **lint** (`ruff`, bloque
 - **TLS** no gRPC: `python main.py --daemon --tls` (canal seguro; trafega CPF e dados financeiros — LGPD).
 - **Auditoria de leitura**: `python consulta.py --autor procurador.silva --motivo "Ofício 9" 'MATCH (n) RETURN n'` — a consulta fica registada como evento imutável.
 - **Parser por LLM**: `export ANTHROPIC_API_KEY=...` e `python main.py --daemon --llm` (Claude com saída estruturada; cai para o determinístico se indisponível).
+
+### Escala — leitura paginada (sem puxar o log inteiro)
+
+As leituras grandes não fazem mais `MATCH (n) RETURN n` numa única mensagem (que
+estoura em produção). O cliente oferece **`scan_all()`** — varredura paginada por
+**cursor de LSN** (`WHERE n.lsn > cursor ORDER BY n.lsn LIMIT batch`), memória
+limitada por lote — e **`get_event()/get_events()`** para buscar só os ULIDs
+necessários (ex.: a proveniência de um insight) ponto a ponto. O `evidence_scorer`
+e o `relatorio` escalam agora com o **nº de provas**, não com o tamanho do banco;
+o daemon e a reconstrução AS OF iteram o log em lotes. (No log de produção com
+~7,6k nós, a demo `--live` corre em ~6 s.)
 
 > **Nota de integridade:** o HeraclitusDB rejeita `parents` que não sejam ULIDs válidos. Referências documentais humanas (números de processo, protocolos) vão em `attrs.source_refs` / `attrs.doc_ref`; a proveniência criptográfica usa sempre os ULIDs reais do log.

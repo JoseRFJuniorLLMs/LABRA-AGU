@@ -111,14 +111,55 @@ class HeraclitusClient:
         ), metadata=self._md)
         return self.query(gql)
 
+    # Tamanho de lote da varredura paginada (cursor por LSN). Mantém cada
+    # resposta gRPC pequena e a memória limitada, em vez de puxar o log inteiro
+    # numa só mensagem — que ESTOURA em produção (RESOURCE_EXHAUSTED / OOM).
+    SCAN_BATCH = 2000
+
+    def scan_all(self, from_lsn: int = 0, batch: int | None = None):
+        """Varre TODOS os nós do log em ordem de LSN, paginando por CURSOR
+        (`WHERE n.lsn > cursor ... ORDER BY n.lsn LIMIT batch`). Generator que
+        rende um dicionário por nó. Substitui `MATCH (n) RETURN n`: mesma
+        cobertura, memória limitada por lote, sem o teto de mensagem única."""
+        batch = batch or self.SCAN_BATCH
+        cursor = from_lsn - 1
+        while True:
+            rows = self.query(
+                f"MATCH (n) WHERE n.lsn > {cursor} RETURN n "
+                f"ORDER BY n.lsn LIMIT {batch}")
+            if not rows:
+                break
+            for r in rows:
+                yield r
+            last = rows[-1].get("lsn", cursor)
+            if last <= cursor or len(rows) < batch:
+                break  # fim do log (ou lsn não-monótono — evita loop infinito)
+            cursor = last
+
+    def get_event(self, event_id: str):
+        """Busca UM nó pelo ULID, sem varrer o log (consulta indexada)."""
+        rows = self.query(f'MATCH (n) WHERE n.id = "{event_id}" RETURN n')
+        return rows[0] if rows else None
+
+    def get_events(self, ids) -> dict:
+        """Busca vários nós por ULID (ponto a ponto — o motor não tem `IN`).
+        Devolve {id: nó}, ignorando os não encontrados. Para um punhado de
+        ULIDs (ex.: a proveniência de um insight) é muito mais barato do que
+        varrer o log inteiro."""
+        out = {}
+        for i in dict.fromkeys(ids):  # únicos, ordem preservada
+            r = self.get_event(i)
+            if r is not None:
+                out[r.get("id", i)] = r
+        return out
+
     def iter_log(self, from_lsn: int = 0):
         """
-        Itera os eventos do log a partir de `from_lsn`, em ordem de LSN.
-        Usado pelo daemon para reconstruir o grafo (materialized view).
-        Devolve tuplos (lsn, episode_dict).
+        Itera os eventos do log a partir de `from_lsn`, em ordem de LSN,
+        PAGINANDO (não puxa tudo de uma vez). Usado pelo daemon para
+        reconstruir o grafo. Devolve tuplos (lsn, episode_dict).
         """
-        rows = self.query("MATCH (n) RETURN n ORDER BY n.lsn")
-        for r in rows:
+        for r in self.scan_all(from_lsn=from_lsn):
             lsn = r.get("lsn", 0)
             if lsn >= from_lsn:
                 yield lsn, r
