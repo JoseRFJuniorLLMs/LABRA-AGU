@@ -115,6 +115,14 @@ _CSS = """<style>
   .facil .item b{color:#8E24AA;}
   .facil .who{color:#5B6B7B;font-size:.78rem;}
   .fuzzy .item{border-left-color:#B9770E;} .fuzzy .item b{color:#B9770E;}
+  #node-detail{position:absolute;left:8px;bottom:8px;max-width:300px;max-height:62%;overflow:auto;z-index:7;background:#fff;border:1px solid #D8E0EA;border-radius:10px;padding:12px 30px 12px 14px;font-size:12px;box-shadow:0 8px 24px #0c326f2a;display:none;}
+  #node-detail h4{margin:2px 0 4px;font-size:.95rem;color:#0C326F;}
+  #node-detail .role{display:inline-block;font-size:.62rem;font-weight:800;padding:2px 8px;border-radius:5px;margin-bottom:6px;letter-spacing:.03em;}
+  #node-detail .id{color:#5B6B7B;font-variant-numeric:tabular-nums;}
+  #node-detail .ttl{margin:9px 0 4px;color:#1B2B40;}
+  #node-detail .conn{margin:3px 0;color:#1B2B40;} #node-detail .conn .c{color:#5B6B7B;}
+  #node-detail .x{position:absolute;top:6px;right:10px;cursor:pointer;color:#8a9aab;font-weight:700;font-size:14px;}
+  .graphbox.focused{box-shadow:0 0 0 3px #1351B4,0 0 22px #1351b455;border-radius:8px;}
 </style>"""
 
 _HTML = """<body>
@@ -154,6 +162,7 @@ _HTML = """<body>
         <button id="stab-btn" class="stab-btn" title="Congelar movimento das arestas">❄ Congelar arestas</button>
         <button id="align-btn" class="align-btn" title="Reorganizar e centrar o grafo">⟲ Auto-alinhar</button>
         <div id="g" class="netg" role="img" aria-label="Grafo de relações do caso (dinâmico, montado AS OF)"></div>
+        <div id="node-detail"></div>
       </div>
       <div class="alerts-live" id="alerts-live"></div>
     </div>
@@ -240,6 +249,38 @@ _JS = """
   }
   function fe(role,nome,id,cls){ return '<div class="fe '+(cls||'')+'"><span class="role">'+role+'</span><b>'+nome+'</b>'+(id?' <span class="id">'+id+'</span>':'')+'</div>'; }
 
+  // ── detalhe da pessoa: clicar num nó mostra TUDO sobre ela ──
+  function nodeById(c,id){ for(var i=0;i<c.nodes.length;i++){ if(c.nodes[i].id===id) return c.nodes[i]; } return null; }
+  function nodeRole(c,n){
+    if(n.id===c.devedor_id) return ['DEVEDOR','#C0392B'];
+    if(n.id_fmt===c.off) return ['OFFSHORE','#1351B4'];
+    if(n.id_fmt===c.lar) return ['LARANJA','#B9770E'];
+    return [((n.kind||'').indexOf('JURIDICA')>=0?'PESSOA JURÍDICA':'PESSOA FÍSICA'),'#5B6B7B'];
+  }
+  function showNodeDetail(id){
+    var c=CASES[active], n=nodeById(c,id), d=el('node-detail'); if(!n||!d) return;
+    var role=nodeRole(c,n);
+    var kindTxt=(n.kind||'').indexOf('JURIDICA')>=0?'Pessoa Jurídica':((n.kind||'').indexOf('FISICA')>=0?'Pessoa Física':'—');
+    var conns=[];
+    c.edges.forEach(function(e){
+      if(e.src===id){ var o=nodeById(c,e.dst); conns.push('<div class="conn">→ <b>'+esc(o?o.label:e.dst)+'</b> <span class="c">'+esc(e.label)+'</span></div>'); }
+      else if(e.dst===id){ var o2=nodeById(c,e.src); conns.push('<div class="conn">← <b>'+esc(o2?o2.label:e.src)+'</b> <span class="c">'+esc(e.label)+'</span></div>'); }
+    });
+    var passo=(appearT[id]!=null)?(' · entra no passo '+(appearT[id]+1)):'';
+    d.innerHTML='<span class="x">✕</span>'
+      +'<div class="role" style="background:'+role[1]+'22;color:'+role[1]+'">'+role[0]+'</div>'
+      +'<h4>'+esc(n.label||id)+'</h4>'
+      +'<div class="id">'+esc(n.id_fmt||id)+' · '+kindTxt+passo+'</div>'
+      +'<div class="ttl"><b>'+conns.length+'</b> conexão(ões) no caso:</div>'
+      +(conns.length?conns.join(''):'<div class="conn c">sem arestas neste caso</div>');
+    d.style.display='block';
+    d.querySelector('.x').onclick=function(){ d.style.display='none'; };
+  }
+  // ── foco no grafo: centra na viewport e dá um realce ──
+  function focusGraph(){ var gb=el('graphbox'); if(!gb) return;
+    gb.scrollIntoView({behavior:'smooth',block:'center'});
+    gb.classList.add('focused'); setTimeout(function(){ gb.classList.remove('focused'); },1300); }
+
   // ── grafo dinâmico via vis-network (física, nós arrastáveis, sem sobreposição) ──
   function fcol(c,n){ return n.id===c.devedor_id?'#C0392B':((n.kind||'').indexOf('JURIDICA')>=0?'#1351B4':'#B9770E'); }
   function ecol(e){ var k=e.kind||'';
@@ -257,9 +298,15 @@ _JS = """
       return {id:i, from:e.src, to:e.dst, label:e.label, arrows:'to', dashes:reg, color:{color:col,highlight:col},
         font:{size:10,color:col,strokeWidth:4,strokeColor:'#fff'}, smooth:{type:'dynamic'}, width:reg?2.4:1.6}; }));
     if(net) net.destroy();
+    var nd=el('node-detail'); if(nd) nd.style.display='none';
     net=new vis.Network(gdiv, {nodes:nodesDS, edges:edgesDS}, {
       physics:{barnesHut:{springLength:155,avoidOverlap:0.5}, stabilization:{iterations:240}},
       interaction:{hover:true, dragNodes:true, zoomView:true}, nodes:{shadow:false}, edges:{shadow:false}});
+    // clicar num nó → painel com TODA a informação da pessoa; clicar no vazio → fecha
+    net.on('click', function(params){
+      if(params.nodes && params.nodes.length){ showNodeDetail(params.nodes[0]); }
+      else { var d=el('node-detail'); if(d) d.style.display='none'; }
+    });
   }
   function renderReveal(){
     var c=CASES[active], p=scrubVal;
@@ -290,7 +337,7 @@ _JS = """
     ticks.innerHTML='';
     (c.ticks||[]).forEach(function(t,i){ var r=document.createElement('div'); r.className='tick'; r.setAttribute('data-i',i);
       r.innerHTML='<span class="dot"></span><span class="tk"><span class="td">'+esc(t.date||('#'+(i+1)))+'</span><span class="tev">'+esc(t.label)+'</span></span>';
-      r.onclick=function(){setScrub(i);};
+      r.onclick=function(){setScrub(i); focusGraph();};
       var html='<b>'+esc(t.date||('passo '+(i+1)))+' · '+esc(t.label)+'</b><div style="margin-top:3px;color:#5B6B7B">'+esc(t.resumo||'')+'</div>';
       r.onmouseenter=function(ev){showTip(ev,html);}; r.onmousemove=moveTip; r.onmouseleave=hideTip;
       ticks.appendChild(r); });

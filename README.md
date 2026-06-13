@@ -161,7 +161,9 @@ Três capacidades que vão além de detetar um caso isolado (demo: `py demo/demo
 
 A Fase 3 está **integrada no painel** (`demo/run.py`): a **Fila Priorizada** no topo
 (clique numa linha para abrir o caso), as **Redes** (facilitadores partilhados) e os
-**possíveis duplicados** (ER fuzzy) no fim. Para ver um facilitador a ligar vários
+**possíveis duplicados** (ER fuzzy) no fim. No grafo, **clicar numa pessoa** abre um
+painel com toda a sua informação (papel, identidade, todas as conexões e em que passo
+entra); **clicar numa data** na barra lateral centra o grafo na tela e dá-lhe realce. Para ver um facilitador a ligar vários
 casos, gere um anel: `py demo/adicionar_caso.py --n 3 --operador-comum` e depois
 `py demo/run.py --keep`.
 
