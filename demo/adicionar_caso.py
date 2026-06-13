@@ -34,10 +34,12 @@ def _ins(path, table, cols, rows):
     con.close()
 
 
-def adicionar_um(rng, data, entrada):
+def adicionar_um(rng, data, entrada, off_comum=None):
     dev = gerar_cpf_valido(rng)   # devedor
     lar = gerar_cpf_valido(rng)   # laranja (cunhado)
-    off = gerar_cnpj_valido(rng)  # offshore
+    # off_comum: offshore PARTILHADA entre casos (gera um anel/facilitador
+    # detectável pela análise de redes); senão, uma offshore própria do caso.
+    off = off_comum or gerar_cnpj_valido(rng)
     agt = gerar_cpf_valido(rng)   # agente público subornado
 
     # JUNTA — venda de quotas (CPF do devedor FORMATADO).
@@ -106,6 +108,9 @@ def main():
     ap = argparse.ArgumentParser(description="Adiciona casos de fraude à demo")
     ap.add_argument("--n", type=int, default=1, help="quantos casos adicionar")
     ap.add_argument("--seed", type=int, default=None, help="semente reproduzível")
+    ap.add_argument("--operador-comum", action="store_true",
+                    help="todos os casos partilham a MESMA offshore (gera um anel "
+                         "/ facilitador detectável pela análise de redes)")
     args = ap.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -114,9 +119,12 @@ def main():
     os.makedirs(entrada, exist_ok=True)
     rng = random.Random(args.seed)
 
+    off_comum = gerar_cnpj_valido(rng) if args.operador_comum else None
+    if off_comum:
+        print(f"Operador comum (offshore partilhada): {fmt_cnpj(off_comum)}\n")
     print(f"A adicionar {args.n} caso(s) de fraude aos bancos da demo...\n")
     for i in range(args.n):
-        ids = adicionar_um(rng, data, entrada)
+        ids = adicionar_um(rng, data, entrada, off_comum=off_comum)
         print(f"  Caso #{i+1}: devedor {ids['devedor_fmt']} · "
               f"laranja {ids['laranja']} · offshore {ids['offshore']}")
     print("\nFeito. Agora re-ingira para o agente fechar os casos novos:")

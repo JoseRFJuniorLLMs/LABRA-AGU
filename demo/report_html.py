@@ -101,6 +101,20 @@ _CSS = """<style>
   .graphbox.fs .netg{height:calc(100vh - 20px);}
   #tip{position:fixed;z-index:300;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
   #tip b{color:#0C326F;}
+  .ptable{width:100%;border-collapse:collapse;background:#fff;border:1px solid #D8E0EA;border-radius:12px;overflow:hidden;font-size:.85rem;}
+  .ptable th{background:#0C326F;color:#fff;text-align:left;padding:9px 12px;font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.03em;}
+  .ptable td{padding:9px 12px;border-top:1px solid #EEF2F7;}
+  .ptable td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .ptable tr.prow{cursor:pointer;transition:background .12s;}
+  .ptable tr.prow:hover{background:#F0F4FA;}
+  .ptable .rk{display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;background:#1351B4;color:#fff;border-radius:50%;font-size:.72rem;font-weight:800;}
+  .sevtag{font-size:.66rem;font-weight:800;padding:2px 7px;border-radius:5px;}
+  .bar{height:6px;border-radius:3px;background:#1351B4;display:inline-block;vertical-align:middle;}
+  .facil{display:flex;flex-direction:column;gap:8px;}
+  .facil .item{background:#fff;border:1px solid #D8E0EA;border-left:4px solid #8E24AA;border-radius:10px;padding:10px 14px;font-size:.85rem;}
+  .facil .item b{color:#8E24AA;}
+  .facil .who{color:#5B6B7B;font-size:.78rem;}
+  .fuzzy .item{border-left-color:#B9770E;} .fuzzy .item b{color:#B9770E;}
 </style>"""
 
 _HTML = """<body>
@@ -120,6 +134,11 @@ _HTML = """<body>
     <div class="stat"><div class="n" id="m_fraudes" style="color:#C0392B">0</div><div class="l">Fraudes</div></div>
     <div class="stat"><div class="n" id="m_criticas" style="color:#C0392B">0</div><div class="l">Severidade CRÍTICA</div></div>
     <div class="stat"><div class="n" style="color:#1351B4">4</div><div class="l">Fontes correlacionadas</div></div>
+  </div>
+
+  <div id="sec-fila">
+  <h2>Fila Priorizada — por onde começar (valor × severidade × prova)</h2>
+  <div id="fila"></div>
   </div>
 
   <h2>Ficha do Caso — quem é quem</h2>
@@ -154,6 +173,16 @@ _HTML = """<body>
   </div>
   <div class="matriz" id="matriz"></div>
   <div class="minuta" id="minuta"></div>
+
+  <div id="sec-redes">
+  <h2>Redes entre Casos — facilitadores partilhados (a "fábrica de laranjas")</h2>
+  <div class="facil" id="redes"></div>
+  </div>
+
+  <div id="sec-fuzzy">
+  <h2>Resolução de Entidades — possíveis duplicados (revisão humana)</h2>
+  <div class="facil fuzzy" id="fuzzy"></div>
+  </div>
 
   <div class="note">
     <b>Cadeia de custódia:</b> cada alerta aponta, por <b>ULID real</b>, para os eventos-fonte
@@ -285,17 +314,66 @@ _JS = """
     try{ if(navigator.clipboard) navigator.clipboard.writeText(cmd); }catch(e){}
     el('llm-hint').textContent='Comando copiado: '+cmd+'  (requer ANTHROPIC_API_KEY; extrai doação cruzada, usufruto e cascata via Claude; fallback determinístico).'; };
   renderCase();
+
+  // ── Fase 3: fila priorizada + redes (facilitadores) + ER fuzzy ──
+  function brl(v){ v=v||0; return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function sevTag(s){ var c=sev(s); return '<span class="sevtag" style="background:'+c[1]+';color:'+c[0]+'">'+c[2]+'</span>'; }
+  function hide(id){ var e=el(id); if(e) e.style.display='none'; }
+  (function renderFase3(){
+    var F = (typeof FASE3!=='undefined') ? FASE3 : {};
+    // Fila priorizada
+    var fila=F.fila||[];
+    if(fila.length){
+      var max=fila[0]&&fila[0].score_prioridade||1;
+      var h='<table class="ptable"><tr><th>#</th><th>Caso</th><th>Valor dissipado</th><th>Fraudes</th><th>Sev.</th><th>Prioridade</th></tr>';
+      fila.forEach(function(c,i){
+        var w=Math.round((c.score_prioridade/(max||1))*90)+10;
+        h+='<tr class="prow" data-dev="'+esc(c.devedor)+'"><td><span class="rk">'+(i+1)+'</span></td>'
+          +'<td><b>'+esc(c.nome||c.devedor)+'</b></td>'
+          +'<td class="num">'+brl(c.valor)+'</td>'
+          +'<td class="num">'+(c.n_fraudes||0)+'</td>'
+          +'<td>'+sevTag(c.severidade_max)+'</td>'
+          +'<td class="num">'+c.score_prioridade.toFixed(2)+' <span class="bar" style="width:'+w+'px"></span></td></tr>';
+      });
+      el('fila').innerHTML=h+'</table>';
+      Array.prototype.forEach.call(el('fila').querySelectorAll('.prow'),function(tr){
+        tr.onclick=function(){ var dev=tr.getAttribute('data-dev');
+          for(var i=0;i<CASES.length;i++){ if(CASES[i].devedor_id===dev){ active=i; if(sel) sel.value=i; renderCase(); window.scrollTo({top:0,behavior:'smooth'}); break; } } };
+      });
+    } else { hide('sec-fila'); }
+    // Redes — facilitadores partilhados
+    var facs=F.facilitadores||[];
+    if(facs.length){
+      el('redes').innerHTML=facs.map(function(f){
+        var quem=(f.devedores_nomes||f.devedores||[]).join(' · ');
+        return '<div class="item">↳ <b>'+esc(f.nome||f.entidade)+'</b> ('+esc(f.kind||'entidade')+') liga <b>'
+          +f.n_devedores+'</b> casos<div class="who">devedores: '+esc(quem)+'</div></div>';
+      }).join('');
+    } else { hide('sec-redes'); }
+    // ER fuzzy — possíveis duplicados
+    var fz=F.fuzzy||[];
+    if(fz.length){
+      el('fuzzy').innerHTML=fz.map(function(c){
+        return '<div class="item">≈ <b>'+esc(c.nome_a)+'</b> &harr; <b>'+esc(c.nome_b)
+          +'</b> <span class="who">(similaridade '+c.similaridade+' · '+esc(c.motivo)+')</span></div>';
+      }).join('');
+    } else { hide('sec-fuzzy'); }
+  })();
 """
 
 
-def gerar(cases, totals, out_path):
+def gerar(cases, totals, out_path, fase3=None):
     cases_js = json.dumps(cases, ensure_ascii=False)
     totals_js = json.dumps(totals, ensure_ascii=False)
+    fase3_js = json.dumps(
+        fase3 or {"fila": [], "facilitadores": [], "aneis": [], "fuzzy": []},
+        ensure_ascii=False)
     # vis-network em bundle LOCAL (offline). O painel é gerado em
     # demo/demo_data/, logo a lib em demo/vendor/ fica em ../vendor/.
     vis = '<script src="../vendor/vis-network.min.js"></script>'
     script = (vis + "<script>(function(){var CASES=" + cases_js +
-              ";var TOTALS=" + totals_js + ";" + _JS + "})();</script>")
+              ";var TOTALS=" + totals_js + ";var FASE3=" + fase3_js +
+              ";" + _JS + "})();</script>")
     doc = ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
            '<meta name="viewport" content="width=device-width, initial-scale=1">'
            '<title>LABRA-AGU · Painel Pericial</title>' + _CSS + '</head>' +

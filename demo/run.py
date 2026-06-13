@@ -191,6 +191,41 @@ _ORDEM = ["triangulacao_offshore", "suborno", "antedatacao",
           "mula_financeira", "anomalia_judiciaria"]
 
 
+def _fase3(g_full, cases, teorias):
+    """Inteligência de rede + priorização + ER fuzzy sobre o grafo GLOBAL,
+    para o painel (Fase 3). Tudo derivado do grafo já reconstruído."""
+    out = {"fila": [], "facilitadores": [], "aneis": [], "fuzzy": []}
+    if g_full is None:
+        return out
+    from agent.entity_resolution import FuzzyResolver
+    from agent.network_analysis import CrossCaseNetwork
+    from agent.recovery import priorizar, valor_dissipado
+    _rank = {"CRITICA": 3, "ALTA": 2, "MEDIA": 1, "BAIXA": 0}
+    casos_fila = []
+    for c in cases:
+        dev = c["devedor_id"]
+        sev_max = max((a["sev"] for a in c["alerts"]),
+                      key=lambda s: _rank.get(s, 0), default="BAIXA")
+        teo = teorias.get(dev)
+        evid = max((a.get("evidence_score") or 0.0
+                    for a in (teo.matriz_evidencias if teo else [])), default=None)
+        casos_fila.append({"devedor": dev, "nome": c["dev_n"],
+                           "valor": valor_dissipado(g_full, dev),
+                           "severidade_max": sev_max, "evidence_score": evid,
+                           "n_fraudes": len(c["alerts"])})
+    out["fila"] = priorizar(casos_fila)
+    nomes = {c["devedor_id"]: c["dev_n"] for c in cases}
+    net = CrossCaseNetwork(g_full)
+    facs = net.facilitadores(min_devedores=2)[:12]
+    for f in facs:
+        f["nome"] = nome_de(f["entidade"]) or f["nome"]
+        f["devedores_nomes"] = [nomes.get(d, d) for d in f["devedores"]]
+    out["facilitadores"] = facs
+    out["aneis"] = net.aneis(min_devedores=2)[:12]
+    out["fuzzy"] = FuzzyResolver(g_full).candidatos()[:12]
+    return out
+
+
 def _sqlite_url(path: str) -> str:
     return "sqlite:///" + os.path.abspath(path).replace(os.sep, "/")
 
@@ -438,8 +473,18 @@ def run(target, keep=False):
     total_crit = sum(1 for c in cases for a in c["alerts"] if a["sev"] == "CRITICA")
     totals = {"cases": len(cases), "fraudes": total_fraudes, "criticas": total_crit}
 
+    # ── Fase 3 (sobre o grafo GLOBAL): fila priorizada + redes + ER fuzzy ──
+    fase3 = _fase3(g_full, cases, teorias)
+
     banner("RESUMO")
     print(f"  {len(cases)} caso(s) · {total_fraudes} fraude(s) · {total_crit} CRÍTICA(s)")
+    if fase3["fila"]:
+        topo = fase3["fila"][0]
+        print(f"  Fila: {len(fase3['fila'])} casos priorizados · topo {topo['nome']} "
+              f"(R$ {topo['valor']:,.0f})".replace(",", "."))
+    if fase3["facilitadores"]:
+        print(f"  Redes: {len(fase3['facilitadores'])} facilitador(es) partilhado(s) "
+              "entre casos.")
     print("  Cada alerta aponta por ULID aos documentos-fonte; CPF formatado e cru = 1 nó.")
     print("  Tudo vive no log imutável do HeraclitusDB — auditável, AS OF qualquer ponto.")
 
@@ -447,7 +492,7 @@ def run(target, keep=False):
     try:
         import report_html
         import webbrowser
-        full = report_html.gerar(cases, totals, out_html)
+        full = report_html.gerar(cases, totals, out_html, fase3=fase3)
         print(f"\n  📊 Painel único gerado: {full}")
         webbrowser.open(f"file:///{full.replace(os.sep, '/')}")
         print("  (aberto no browser — selecione o caso e arraste a barra de tempo)")

@@ -57,30 +57,20 @@ class CrossCaseNetwork:
             devs.add(t["src"])
         return devs
 
-    def _bfs(self, start: str, max_hops: int) -> Set[str]:
-        seen, frontier = {start}, {start}
-        for _ in range(max_hops):
-            nxt: Set[str] = set()
-            for n in frontier:
-                nxt |= self.adj[n] - seen
-            seen |= nxt
-            frontier = nxt
-            if not frontier:
-                break
-        return seen
-
     # ── facilitadores partilhados ──────────────────────────────────────
-    def facilitadores(self, min_devedores: int = 2, max_hops: int = 2) -> List[dict]:
-        """Entidades NÃO-devedoras alcançáveis (até max_hops) por >= min_devedores
-        devedores distintos — offshore/laranja/procurador partilhado entre casos."""
-        reach: Dict[str, Set[str]] = defaultdict(set)
-        for dev in self.devedores:
-            for n in self._bfs(dev, max_hops):
-                if n != dev:
-                    reach[n].add(dev)
+    def facilitadores(self, min_devedores: int = 2) -> List[dict]:
+        """Entidades NÃO-devedoras ligadas DIRETAMENTE (1 salto) a
+        >= min_devedores devedores distintos — a offshore/conta/empresa que
+        recebe de vários executados ao mesmo tempo. Adjacência direta (e não
+        alcance a 2 saltos) evita o ruído de nós-folha pendurados num hub: só
+        conta quem genuinamente liga vários casos. Laranjas partilhados atrás de
+        um hub aparecem nos ANÉIS (comunidades), não aqui."""
         out = []
-        for ent, devs in reach.items():
-            if ent in self.devedores or len(devs) < min_devedores:
+        for ent, viz in self.adj.items():
+            if ent in self.devedores:
+                continue
+            devs = viz & self.devedores
+            if len(devs) < min_devedores:
                 continue
             out.append({
                 "entidade": ent,
@@ -88,7 +78,7 @@ class CrossCaseNetwork:
                 "kind": self.g.entity_kind.get(ent, ""),
                 "n_devedores": len(devs),
                 "devedores": sorted(devs),
-                "grau": len(self.adj.get(ent, ())),
+                "grau": len(viz),
             })
         return sorted(out, key=lambda x: (x["n_devedores"], x["grau"]),
                       reverse=True)

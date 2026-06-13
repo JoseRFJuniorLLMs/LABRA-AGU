@@ -159,6 +159,12 @@ Três capacidades que vão além de detetar um caso isolado (demo: `py demo/demo
   (Bayes com suavização, reconstruível por replay); e a resolução **fuzzy** sugere
   laranjas com o nome ligeiramente alterado que escapariam à correspondência exata.
 
+A Fase 3 está **integrada no painel** (`demo/run.py`): a **Fila Priorizada** no topo
+(clique numa linha para abrir o caso), as **Redes** (facilitadores partilhados) e os
+**possíveis duplicados** (ER fuzzy) no fim. Para ver um facilitador a ligar vários
+casos, gere um anel: `py demo/adicionar_caso.py --n 3 --operador-comum` e depois
+`py demo/run.py --keep`.
+
 ## Avaliação — a deteção é medida, não afirmada
 
 A pasta `evaluation/` torna a deteção **verificável**: cenários rotulados (positivos *e* negativos) com o conjunto de padrões que cada um deve disparar, e um harness que calcula **precisão / recall / F1 por padrão** — 100% offline (sem servidor), via `Investigator` em memória.
