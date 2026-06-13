@@ -80,8 +80,11 @@ def normalize_id(raw: str) -> str:
         return f"CNPJ:{digits}"
 
     # Placeholder simbólico (protótipo) ou id não-validável: forma limpa,
-    # determinística, maiúscula — preserva o prefixo declarado.
+    # determinística, maiúscula — preserva o prefixo declarado. Apara também
+    # pontuação à direita: um id no fim de frase ("...CPF_DEV.") não pode
+    # canonicalizar diferente de "CPF_DEV", senão fragmenta o grafo.
     cleaned = re.sub(r"\s+", "", upper)
+    cleaned = re.sub(r"[^0-9A-Z]+$", "", cleaned)
     return cleaned
 
 

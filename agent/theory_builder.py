@@ -23,15 +23,14 @@ from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
 from .anomaly_engine import AnomalyEngine
-from .asset_shield import SHIELD_PATTERNS
 from .case_memory import CaseMemory
 from .causal_chain import CausalChainBuilder
 from .counterfactual import CounterfactualEngine
 from .evidence_scorer import EvidenceScorer
 from .graph_timeline import GraphTimeline
+from .investigator import CATALOG
 from .legal_mapper import LegalMapper
 from .litigator import Litigator
-from .patterns import PATTERNS
 
 _SEVW = {"CRITICA": 3, "ALTA": 2, "MEDIA": 1, "BAIXA": 0}
 
@@ -66,7 +65,7 @@ class TheoryBuilder:
         """Dedutivo (patterns + asset_shield), pontuado e filtrado por
         proveniência rastreável (sem alucinações)."""
         achados: List[dict] = []
-        for fn in {**PATTERNS, **SHIELD_PATTERNS}.values():
+        for fn in CATALOG.values():
             achados.extend(fn(g))
         for a in achados:
             evs = sorted(a.get("source_events", set()))

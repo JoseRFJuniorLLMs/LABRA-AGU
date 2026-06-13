@@ -8,6 +8,12 @@ correm em CI sem infra. Complementam a separação dedutivo/indutivo/litígio.
 import json
 
 from agent.anomaly_engine import AnomalyEngine
+from agent.asset_shield import (
+    detect_bem_a_interposto,
+    detect_bem_preco_vil,
+    detect_controle_circular,
+    detect_ubo_cadeia_profunda,
+)
 from agent.case_memory import CaseMemory
 from agent.causal_chain import CausalChainBuilder
 from agent.counterfactual import CounterfactualEngine
@@ -141,3 +147,48 @@ def test_litigator_minuta_estrutura():
     for marca in ("## I — DOS FATOS", "## II — DO DIREITO",
                   "## III — DO PEDIDO", "[Prova: EV1]", "CPC, art. 792"):
         assert marca in md, f"minuta sem '{marca}'"
+
+
+# ── BENS (nó de ativo) — #1 da auditoria de cobertura ──────────────────
+def test_parser_extrai_bem_e_avaliacao():
+    doc = parse_document(
+        "CPF_DEV transferiu o IMOVEL_MAT123 para CPF_LAR por R$ 50.000,00 em "
+        "10/06/2026. O IMOVEL_MAT123 está avaliado em R$ 5.000.000,00.", "EV")
+    assert len(doc.asset_transfers) == 1
+    tr = doc.asset_transfers[0]
+    assert tr.asset_id == "IMOVEL_MAT123" and tr.value == 50000.0
+    assert tr.date == "2026-06-10"
+    assert any(a.id == "IMOVEL_MAT123" and a.valor_mercado == 5_000_000.0
+               for a in doc.assets)
+
+
+def test_bem_preco_vil_critica():
+    g = _g("CPF_DEV transferiu o IMOVEL_MAT123 para CPF_LAR por R$ 50.000,00. "
+           "O IMOVEL_MAT123 está avaliado em R$ 5.000.000,00.")
+    ach = detect_bem_preco_vil(g)
+    assert ach and ach[0]["severidade"] == "CRITICA"
+
+
+def test_bem_a_interposto_familiar():
+    g = _g("CPF_DEV transferiu o FAZENDA_7 para CPF_LAR por R$ 1.000.000,00. "
+           "CPF_LAR é irmão do devedor CPF_DEV.")
+    ach = detect_bem_a_interposto(g)
+    assert ach and ach[0]["devedor_alvo"] == "CPF_DEV"
+
+
+# ── Beneficiário final: cadeia profunda e ciclo — #2 da auditoria ──────
+def test_ubo_cadeia_profunda():
+    g = _g("CPF_DEV controla a CNPJ_O1. A CNPJ_O1 controla a CNPJ_O2. "
+           "A CNPJ_O2 controla a CNPJ_O3. A CNPJ_O3 controla a CNPJ_O4.")
+    achados = detect_ubo_cadeia_profunda(g)
+    assert achados, "esperava deteção de cadeia de controle >= 3 saltos"
+    # a cadeia mais longa começa no devedor e termina no beneficiário final
+    do_devedor = [a for a in achados if a["devedor_alvo"] == "CPF_DEV"]
+    assert do_devedor and "CNPJ_O4" in do_devedor[0]["envolvidos"]
+
+
+def test_controle_circular():
+    g = _g("CNPJ_A controla a CNPJ_B. A CNPJ_B controla a CNPJ_C. "
+           "A CNPJ_C controla a CNPJ_A.")
+    ach = detect_controle_circular(g)
+    assert ach and set(ach[0]["envolvidos"]) == {"CNPJ_A", "CNPJ_B", "CNPJ_C"}

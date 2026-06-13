@@ -63,12 +63,49 @@ class Transaction(BaseModel):
     date: Optional[str] = None  # ISO yyyy-mm-dd
 
 
+class Asset(BaseModel):
+    """Um BEM (imóvel, veículo, fazenda, conta, cripto…). O grafo deixa de ser
+    só de pessoas: a blindagem é, no fundo, BENS a moverem-se."""
+    id: str
+    kind: str  # IMOVEL | VEICULO | FAZENDA | AERONAVE | CRIPTO | CONTA | BEM …
+    valor_mercado: Optional[float] = None  # avaliação/valor de referência
+
+
+class AssetTransfer(BaseModel):
+    """Alienação de um bem entre pessoas (com o preço DECLARADO, que pode ser
+    vil face ao valor de mercado)."""
+    asset_id: str
+    from_id: str
+    to_id: str
+    value: Optional[float] = None  # preço declarado da alienação
+    date: Optional[str] = None
+
+
+class EntityAttr(BaseModel):
+    """Atributo de uma entidade (renda anual declarada, data de constituição…).
+    Permite perguntas que o grafo de relações sozinho não responde — ex.: o
+    patrimônio FECHA com a renda lícita declarada?"""
+    id: str
+    key: str            # renda_anual | data_constituicao | servidor_publico
+    value_num: Optional[float] = None
+    value_str: Optional[str] = None
+
+
 class ParsedDocument(BaseModel):
     entities: List[Entity]
     relations: List[Relation]
     transactions: List[Transaction] = []
     marcos_judiciais: List[str] = []  # datas ISO de penhora/citação/bloqueio
     source_event_id: str
+    assets: List[Asset] = []
+    asset_transfers: List[AssetTransfer] = []
+    entity_attrs: List[EntityAttr] = []
+    # Sinal de confiança da extração (1.0 = alta). O parser determinístico é
+    # frágil a redações fora dos gatilhos canónicos: quando há vários
+    # identificadores mas poucos/nenhuns fatos, marca para REVISÃO HUMANA em
+    # vez de produzir um grafo incompleto em silêncio.
+    confidence: float = 1.0
+    needs_review: bool = False
     # Sinal de confiança da extração (1.0 = alta). O parser determinístico é
     # frágil a redações fora dos gatilhos canónicos: quando há vários
     # identificadores mas poucos/nenhuns fatos, marca para REVISÃO HUMANA em
@@ -152,6 +189,102 @@ _INSS_RE = re.compile(
     rf"(?:(?!{_ID}).)*?\bpara\b\s+(?:a\s+|o\s+)?({_ID})",
     re.IGNORECASE | re.DOTALL,
 )
+
+# ── Bens (ATIVOS) ──────────────────────────────────────────────────────
+# Token de bem: tipo + sufixo (ex.: IMOVEL_MAT12345, FAZENDA_3, CRIPTO_WALLET).
+# Distingue-se do _ID (que exige prefixo CPF/CNPJ ou cadeia de dígitos).
+_BEM = (r"(?:IM[OÓ]VEL|VE[IÍ]CULO|VEICULO|FAZENDA|AERONAVE|EMBARCA[ÇC][AÃ]O|"
+        r"EMBARCACAO|APARTAMENTO|TERRENO|CRIPTO|CONTA|BEM)[A-Za-z0-9_.\-/]*")
+_BEM_RE = re.compile(_BEM, re.IGNORECASE)
+# "<ID> vendeu/transferiu/alienou o <BEM> ... para <ID> ... por R$ <valor>"
+_TRANSF_BEM_RE = re.compile(
+    rf"({_ID})\s+(?:transferiu|vendeu|alienou|cedeu|doou|passou)\s+"
+    rf"(?:o\s+|a\s+|os\s+|as\s+)?({_BEM})"
+    rf"(?:(?!{_ID}).)*?\bpara\b\s+(?:a\s+|o\s+)?({_ID})"
+    rf"(?:(?:(?!{_ID}).)*?\bR\$\s?([\d.]+,\d{{2}}))?",
+    re.IGNORECASE | re.DOTALL,
+)
+# "<BEM> avaliado em / vale / valor de mercado R$ <valor>"
+_AVALIACAO_RE = re.compile(
+    rf"({_BEM})(?:(?!{_BEM}).)*?"
+    rf"(?:avaliad[oa]|valor\s+de\s+mercado|vale)\b"
+    rf"(?:(?!R\$).)*?R\$\s?([\d.]+,\d{{2}})",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _canon_bem(tok: str) -> str:
+    """Id canónico do bem: maiúsculas, sem espaços, sem pontuação à direita."""
+    return re.sub(r"[^0-9A-Za-z]+$", "", re.sub(r"\s+", "", tok.upper()))
+
+
+def _bem_kind(tok: str) -> str:
+    """Tipo do bem a partir do prefixo do token."""
+    up = tok.upper()
+    for k in ("IMOVEL", "IMÓVEL", "VEICULO", "VEÍCULO", "FAZENDA", "AERONAVE",
+              "EMBARCACAO", "EMBARCAÇAO", "APARTAMENTO", "TERRENO", "CRIPTO",
+              "CONTA"):
+        if up.startswith(k):
+            return k.replace("Ó", "O").replace("Í", "I").replace("Ç", "C").replace("Ã", "A")
+    return "BEM"
+
+
+# ── Cobertura ampliada (renda, contrato público, cripto, atributos,
+#    passivos, judiciário) — a maioria reusa o dict de relações. ──────────
+_FORO = r"(?:FORO|VARA|COMARCA|TRIBUNAL)[A-Za-z0-9_.\-/]*"
+# "<ID> declara renda anual de R$ <valor>"
+_RENDA_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\brenda\s+anual\b(?:(?!R\$).)*?R\$\s?([\d.]+,\d{{2}})",
+    re.IGNORECASE | re.DOTALL)
+# "<ID/CNPJ> foi constituída/aberta/fundada em <data>"
+_CONSTIT_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\b(?:constitu[íi]da|aberta|fundada|criada)\s+em\s+"
+    rf"(\d{{2}}/\d{{2}}/\d{{4}})",
+    re.IGNORECASE | re.DOTALL)
+# "<ID> e <ID> compartilham/têm o mesmo endereço|telefone|contador|conta"
+_MESMO_ATRIB_RE = re.compile(
+    rf"({_ID})\s+e\s+({_ID})(?:(?!{_ID}).)*?"
+    rf"\b(?:compartilham|partilham|t[êe]m\s+o\s+mesmo|mesm[oa])\b"
+    rf"(?:(?!{_ID}).)*?\b(endere[çc]o|telefone|contador|conta)\b",
+    re.IGNORECASE | re.DOTALL)
+# "<devedor> confessou dívida de R$ <valor> a/para <credor>"
+_DIVIDA_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\bconfessou\s+d[íi]vida\b(?:(?!R\$).)*?"
+    rf"R\$\s?([\d.]+,\d{{2}})(?:(?!{_ID}).)*?\b(?:a|para|ao|à)\b\s+({_ID})",
+    re.IGNORECASE | re.DOTALL)
+# "<reclamante> move reclamação trabalhista de R$ <valor> contra <empresa>"
+_TRABALHISTA_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?reclama[çc][ãa]o\s+trabalhista\b(?:(?!R\$).)*?"
+    rf"R\$\s?([\d.]+,\d{{2}})(?:(?!{_ID}).)*?\bcontra\b\s+({_ID})",
+    re.IGNORECASE | re.DOTALL)
+# "<órgão> contratou <fornecedor> por R$ <valor>"
+_CONTRATO_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\bcontratou\b(?:(?!{_ID}).)*?({_ID})"
+    rf"(?:(?!{_ID}).)*?\bpor\s+R\$\s?([\d.]+,\d{{2}})",
+    re.IGNORECASE | re.DOTALL)
+# "<ID> converteu R$ <valor> em cripto ... repassou/enviou a/para <ID>" (1 só passo)
+_CRIPTO_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\bconverteu\b(?:(?!R\$).)*?R\$\s?([\d.]+,\d{{2}})"
+    rf"(?:(?!{_ID}).)*?\bcripto\w*\b"
+    rf"(?:(?!{_ID}).)*?\b(?:repassou|enviou|transferiu|remeteu)\b"
+    rf"(?:(?!{_ID}).)*?\b(?:a|para|ao|à)\b\s+(?:a\s+|o\s+)?({_ID})",
+    re.IGNORECASE | re.DOTALL)
+# "<advogado> obteve decisão/sentença/liminar favorável na <FORO>"
+_DECISAO_RE = re.compile(
+    rf"({_ID})(?:(?!{_ID}).)*?\b(?:decis[ãa]o|senten[çc]a|liminar)\s+favor[áa]vel\b"
+    rf"(?:(?!{_FORO}).)*?({_FORO})",
+    re.IGNORECASE | re.DOTALL)
+
+
+def _atrib_rel(palavra: str) -> str:
+    p = palavra.lower()
+    if "endere" in p:
+        return "MESMO_ENDERECO"
+    if "telefone" in p:
+        return "MESMO_TELEFONE"
+    if "contador" in p:
+        return "MESMO_CONTADOR"
+    return "MESMA_CONTA"
 
 
 def parse_document(text: str, source_event_id: str) -> ParsedDocument:
@@ -240,6 +373,58 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
             source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
             relation_type="DESVIO_INSS", date=_data_apos(m)))
 
+    # Bens (ATIVOS): alienações e avaliações. O bem passa a ser um nó.
+    assets: dict = {}
+    asset_transfers: List[AssetTransfer] = []
+    for m in _TRANSF_BEM_RE.finditer(flat):
+        src, bem_tok, dst, val = m.group(1), m.group(2), m.group(3), m.group(4)
+        bem = _canon_bem(bem_tok)
+        assets.setdefault(bem, Asset(id=bem, kind=_bem_kind(bem_tok)))
+        asset_transfers.append(AssetTransfer(
+            asset_id=bem, from_id=_trim(src), to_id=_trim(dst),
+            value=_to_float(val) if val else None, date=_data_apos(m)))
+    for m in _AVALIACAO_RE.finditer(flat):
+        bem = _canon_bem(m.group(1))
+        a = assets.setdefault(bem, Asset(id=bem, kind=_bem_kind(m.group(1))))
+        a.valor_mercado = _to_float(m.group(2))
+
+    # Cobertura ampliada: atributos de entidade + relações novas.
+    entity_attrs: List[EntityAttr] = []
+    for m in _RENDA_RE.finditer(flat):
+        entity_attrs.append(EntityAttr(id=_trim(m.group(1)), key="renda_anual",
+                                       value_num=_to_float(m.group(2))))
+    for m in _CONSTIT_RE.finditer(flat):
+        entity_attrs.append(EntityAttr(id=_trim(m.group(1)),
+                                       key="data_constituicao",
+                                       value_str=_to_iso(m.group(2))))
+    for m in _MESMO_ATRIB_RE.finditer(flat):
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type=_atrib_rel(m.group(3))))
+    for m in _DIVIDA_RE.finditer(flat):  # credor (g3) tem crédito sobre devedor (g1)
+        relations.append(Relation(
+            source_id=_trim(m.group(3)), target_id=_trim(m.group(1)),
+            relation_type="CREDOR_DIVIDA", value=_to_float(m.group(2)),
+            date=_data_apos(m)))
+    for m in _TRABALHISTA_RE.finditer(flat):  # reclamante (g1) vs empresa (g3)
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(3)),
+            relation_type="CREDOR_TRABALHISTA", value=_to_float(m.group(2)),
+            date=_data_apos(m)))
+    for m in _CONTRATO_RE.finditer(flat):  # órgão (g1) contrata fornecedor (g2)
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(2)),
+            relation_type="CONTRATOU_PUBLICO", value=_to_float(m.group(3)),
+            date=_data_apos(m)))
+    for m in _CRIPTO_RE.finditer(flat):  # origem (g1) → cripto → destino (g3)
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_trim(m.group(3)),
+            relation_type="CONVERTEU_CRIPTO", value=_to_float(m.group(2))))
+    for m in _DECISAO_RE.finditer(flat):  # advogado (g1) → foro (g2)
+        relations.append(Relation(
+            source_id=_trim(m.group(1)), target_id=_canon_bem(m.group(2)),
+            relation_type="DECISAO_FAVORAVEL", date=_data_apos(m)))
+
     # Marcos judiciais (penhora, citação, bloqueio) com data próxima
     marcos = [_to_iso(m.group(2)) for m in _MARCO_RE.finditer(flat)]
 
@@ -252,6 +437,9 @@ def parse_document(text: str, source_event_id: str) -> ParsedDocument:
         transactions=transactions,
         marcos_judiciais=marcos,
         source_event_id=source_event_id,
+        assets=list(assets.values()),
+        asset_transfers=asset_transfers,
+        entity_attrs=entity_attrs,
         confidence=confidence,
         needs_review=needs_review,
     )

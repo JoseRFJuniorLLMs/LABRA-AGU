@@ -169,6 +169,15 @@ class GraphTimeline:
                 for t in graph.transactions],
             "marcos": [{"data": m, "events": sorted(evs)}
                        for m, evs in graph.marcos.items()],
+            "assets": [{"id": aid, "kind": meta.get("kind"),
+                        "valor_mercado": meta.get("valor_mercado"),
+                        "events": sorted(meta.get("events", []))}
+                       for aid, meta in graph.assets.items()],
+            "asset_transfers": [
+                {"asset_id": tr["asset_id"], "src": tr["src"], "dst": tr["dst"],
+                 "value": tr["value"], "date": tr["date"],
+                 "events": sorted(tr["events"])}
+                for tr in graph.asset_transfers],
         }
 
     def frame_dict(self, lsn: int) -> dict:

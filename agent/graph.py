@@ -35,6 +35,13 @@ class CaseGraph:
         self.marcos: Dict[str, Set[str]] = defaultdict(set)
         # contagem de aparições por entidade (sinal para ACT-R/relevância)
         self.mentions: Dict[str, int] = defaultdict(int)
+        # BENS (ativos): o grafo deixa de ser só de pessoas. Cada bem é um nó
+        # com tipo e valor de mercado; alienações ligam pessoas a um bem.
+        self.assets: Dict[str, dict] = {}            # id -> {kind, valor_mercado, events}
+        self.asset_transfers: List[dict] = []        # {asset_id, src, dst, value, date, events}
+        # Atributos por entidade (renda anual, data de constituição, …) — base
+        # para a compatibilidade renda×patrimônio e contrato direcionado.
+        self.entity_attrs: Dict[str, dict] = defaultdict(dict)
 
     # ── ingestão ──────────────────────────────────────────────────────
     def ingest(self, doc: ParsedDocument) -> Set[str]:
@@ -64,6 +71,29 @@ class CaseGraph:
 
         for m in doc.marcos_judiciais:
             self.marcos[m].add(ev)
+
+        for a in getattr(doc, "assets", []):
+            meta = self.assets.setdefault(
+                a.id, {"kind": a.kind, "valor_mercado": None, "events": set()})
+            meta["events"].add(ev)
+            if a.valor_mercado is not None:
+                meta["valor_mercado"] = a.valor_mercado
+
+        for tr in getattr(doc, "asset_transfers", []):
+            src, dst = normalize_id(tr.from_id), normalize_id(tr.to_id)
+            self.asset_transfers.append({
+                "asset_id": tr.asset_id, "src": src, "dst": dst,
+                "value": tr.value, "date": tr.date, "events": {ev},
+            })
+            self.mentions[src] += 1
+            self.mentions[dst] += 1
+            touched.update({src, dst})
+
+        for ea in getattr(doc, "entity_attrs", []):
+            cid = normalize_id(ea.id)
+            val = ea.value_num if ea.value_num is not None else ea.value_str
+            self.entity_attrs[cid][ea.key] = val
+            touched.add(cid)
 
         return touched
 
@@ -112,4 +142,6 @@ class CaseGraph:
             "relations": sum(len(v) for v in self.relations.values()),
             "transactions": len(self.transactions),
             "marcos": len(self.marcos),
+            "assets": len(self.assets),
+            "asset_transfers": len(self.asset_transfers),
         }

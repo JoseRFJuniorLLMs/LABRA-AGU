@@ -68,6 +68,95 @@ MAPPING: Dict[str, List[dict]] = {
          "ementa": "Apropriação e desvio de benefícios da Previdência Social, "
                    "com ressarcimento ao erário e improbidade administrativa."},
     ],
+    "bem_preco_vil": [
+        {"tipo": "Negócio jurídico simulado",
+         "dispositivo": "CC, art. 167",
+         "ementa": "Alienação por preço vil revela simulação; o negócio é nulo, "
+                   "subsistindo o que se dissimulou (o bem permanece no devedor)."},
+        {"tipo": "Fraude contra credores",
+         "dispositivo": "CC, art. 158",
+         "ementa": "Transmissão por preço incompatível, insolvente o devedor, é "
+                   "anulável por fraude contra credores."},
+        {"tipo": "Fraude à execução",
+         "dispositivo": "CPC, art. 792"},
+    ],
+    "bem_a_interposto": [
+        {"tipo": "Desconsideração da personalidade / interposição",
+         "dispositivo": "CC, art. 50",
+         "ementa": "Transferência de bem a interposta pessoa mantendo o controle "
+                   "de fato configura confusão patrimonial."},
+        {"tipo": "Fraude à execução",
+         "dispositivo": "CPC, art. 792"},
+        {"tipo": "Presunção de fraude fiscal",
+         "dispositivo": "CTN, art. 185",
+         "ementa": "Presume-se fraudulenta a alienação de bens por sujeito "
+                   "passivo em débito inscrito em dívida ativa."},
+    ],
+    "ubo_cadeia_profunda": [
+        {"tipo": "Ocultação de beneficiário efetivo",
+         "dispositivo": "Lei 9.613/98, art. 1º",
+         "ementa": "Estrutura multicamada para ocultar o beneficiário final "
+                   "configura ocultação dolosa de patrimônio."},
+    ],
+    "controle_circular": [
+        {"tipo": "Confusão patrimonial / abuso da personalidade",
+         "dispositivo": "CC, art. 50",
+         "ementa": "Participação societária circular dissolve a titularidade "
+                   "real e revela abuso da personalidade jurídica."},
+        {"tipo": "Ocultação de beneficiário efetivo",
+         "dispositivo": "Lei 9.613/98, art. 1º"},
+    ],
+    "patrimonio_incompativel": [
+        {"tipo": "Enriquecimento ilícito",
+         "dispositivo": "Lei 8.429/92, art. 9º",
+         "ementa": "Aquisição de bens em valor desproporcional à renda lícita "
+                   "do agente caracteriza enriquecimento ilícito (improbidade)."},
+        {"tipo": "Ocultação patrimonial",
+         "dispositivo": "Lei 9.613/98, art. 1º"},
+    ],
+    "vinculo_por_atributo": [
+        {"tipo": "Interposição / confusão patrimonial",
+         "dispositivo": "CC, art. 50",
+         "ementa": "Atributos compartilhados (endereço, telefone, contador, "
+                   "conta) revelam controlador comum e confusão patrimonial."},
+    ],
+    "passivo_simulado": [
+        {"tipo": "Negócio simulado",
+         "dispositivo": "CC, art. 167",
+         "ementa": "Dívida confessada a credor com vínculo é simulação para "
+                   "preterir o crédito da Fazenda; nula de pleno direito."},
+        {"tipo": "Fraude à execução",
+         "dispositivo": "CPC, art. 792"},
+    ],
+    "contrato_direcionado": [
+        {"tipo": "Frustração da licitação / direcionamento",
+         "dispositivo": "Lei 14.133/21, art. 337-F (CP)",
+         "ementa": "Direcionamento de contratação e fornecedor de fachada "
+                   "frustram o caráter competitivo da licitação."},
+        {"tipo": "Improbidade administrativa",
+         "dispositivo": "Lei 8.429/92, arts. 9º e 10",
+         "ementa": "Dano ao erário e enriquecimento ilícito na contratação "
+                   "pública direcionada."},
+    ],
+    "offramp_cripto": [
+        {"tipo": "Lavagem de dinheiro (ocultação)",
+         "dispositivo": "Lei 9.613/98, art. 1º",
+         "ementa": "Conversão em criptoativos para ocultar origem e "
+                   "titularidade quebra dolosamente a rastreabilidade."},
+    ],
+    "anomalia_judiciaria": [
+        {"tipo": "Anomalia a apurar (NÃO é tipificação)",
+         "dispositivo": "—",
+         "ementa": "Sinal estatístico que requer apuração, assegurados "
+                   "contraditório, ampla defesa e presunção de inocência. Não "
+                   "imputa ilícito a pessoa determinada."},
+    ],
+    "mula_financeira": [
+        {"tipo": "Lavagem de dinheiro (dispersão)",
+         "dispositivo": "Lei 9.613/98, art. 1º",
+         "ementa": "Conta de passagem para fracionar e dispersar recursos, "
+                   "típica de redes de mulas financeiras."},
+    ],
 }
 
 

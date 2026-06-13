@@ -20,13 +20,16 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from .act_r import ACTREngine
 from .asset_shield import SHIELD_PATTERNS
+from .coverage import COVERAGE_PATTERNS
 from .graph import CaseGraph
 from .parser import ParsedDocument
 from .patterns import PATTERNS
 
-# Catálogo completo que o agente vigia: padrões base (patterns.py) + heurísticas
-# avançadas de blindagem (asset_shield.py — Fase 2). Mesmo contrato de detector.
-CATALOG = {**PATTERNS, **SHIELD_PATTERNS}
+# Catálogo completo que o agente vigia: padrões base (patterns.py) + blindagem
+# avançada (asset_shield.py) + cobertura ampliada do contexto brasileiro
+# (coverage.py: renda×patrimônio, contrato público, cripto, atributos, passivos,
+# judiciário, mulas). Mesmo contrato de detector em todos.
+CATALOG = {**PATTERNS, **SHIELD_PATTERNS, **COVERAGE_PATTERNS}
 
 
 def signature(pattern: str, envolvidos, severidade: str):
