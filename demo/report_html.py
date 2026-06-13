@@ -96,7 +96,7 @@ _CSS = """<style>
   .stab-btn.frozen{color:#C0392B;}
   .graphbox.fs{position:fixed;inset:0;z-index:200;background:#fff;padding:10px;border-radius:0;}
   .graphbox.fs .netg{height:calc(100vh - 20px);}
-  #tip{position:fixed;z-index:60;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
+  #tip{position:fixed;z-index:300;max-width:300px;background:#fff;border:1px solid #D8E0EA;border-left:3px solid #1351B4;border-radius:8px;padding:9px 12px;font-size:12px;color:#1B2B40;box-shadow:0 6px 18px #0c326f22;pointer-events:none;display:none;}
   #tip b{color:#0C326F;}
 </style>"""
 
