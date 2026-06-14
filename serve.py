@@ -19,10 +19,62 @@ import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "demo"))  # nomes.py (rótulos)
 
 from agent.llm import LocalLLM  # noqa: E402
 from agent.orchestrator import _json_seguro, investigar  # noqa: E402
+
+# Cache do grafo reconstruído do log de produção (caro: ~6s; reusa-se).
+_LOG = {"graph": None}
+
+
+def _client():
+    from agent.client import HeraclitusClient
+    return HeraclitusClient()  # 127.0.0.1:7474 (HERACLITUS_ADDR)
+
+
+def _graph_log(force: bool = False):
+    """Grafo COMPLETO reconstruído do log do HeraclitusDB (dados reais)."""
+    if _LOG["graph"] is None or force:
+        from agent.graph_timeline import GraphTimeline
+        tl = GraphTimeline(_client())
+        _LOG["graph"] = tl.at_lsn(tl.head())
+    return _LOG["graph"]
+
+
+def _devedores_log():
+    """Devedores REAIS do log (a partir dos insights), com nome e nº de fraudes."""
+    import json as _j
+    from collections import defaultdict
+    rows = [r for r in _client().query(
+        'MATCH (n) WHERE n.generated_by = "labra_agent" RETURN n')
+        if "INSIGHT_PERICIAL_FRAUDE" in r.get("kind", "")]
+    cont = defaultdict(set)
+    for r in rows:
+        try:
+            p = _j.loads(r["content"])
+        except Exception:
+            continue
+        cont[p.get("devedor_alvo", "?")].add(p.get("tipo_fraude"))
+    try:
+        from nomes import nome_de
+    except Exception:
+        def nome_de(_):
+            return None
+    out = [{"id": d, "nome": nome_de(d) or d, "n": len(f)} for d, f in cont.items()]
+    return sorted(out, key=lambda x: -x["n"])
+
+
+def _investigar_log(devedor: str, use_llm: bool = True) -> dict:
+    """Investiga um devedor sobre os DADOS REAIS do log (não persiste o trace)."""
+    from agent.agent_loop import ForensicAgent
+    from agent.entities import normalize_id
+    dev = normalize_id(devedor)
+    llm = LocalLLM() if (use_llm and LocalLLM().available()) else None
+    r = ForensicAgent(_graph_log(), client=None, llm=llm).investigar(dev)
+    return {**r, "devedor": dev}
 
 _CASO_EXEMPLO = (
     "CPF_DEV1 transferiu quotas para CNPJ_OFF1, que nomeou o cunhado CPF_LAR1 com plenos poderes.\n"
@@ -65,8 +117,14 @@ h2:before{content:'';width:4px;height:16px;background:#1351B4;border-radius:2px}
   <textarea id="texto">__EXEMPLO__</textarea>
   <div class="row">
     <input type="text" id="devedor" value="CPF_DEV1" placeholder="CPF/CNPJ do devedor">
-    <button id="go" onclick="investigar()">▶ Investigar</button>
+    <button id="go" onclick="investigar()">▶ Investigar (texto)</button>
     <span id="status" class="motor"></span>
+  </div>
+
+  <h2>… ou investigar um caso REAL do log (HeraclitusDB)</h2>
+  <div class="row">
+    <select id="devlog"><option value="">a carregar devedores…</option></select>
+    <button onclick="investigarLog()">▶ Investigar do log</button>
   </div>
   <div id="out"></div>
 </div>
@@ -79,12 +137,21 @@ async function refreshGemma(){
   }catch(e){}
 }
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-async function investigar(){
+function investigar(){ run({devedor:document.getElementById('devedor').value, texto:document.getElementById('texto').value}); }
+function investigarLog(){ const s=document.getElementById('devlog'); if(!s.value){alert('Escolhe um devedor do log.');return;} run({fonte:'log', devedor:s.value}); }
+async function loadDevedores(){
+  const s=document.getElementById('devlog');
+  try{ const r=await fetch('/devedores'); const j=await r.json();
+    if(Array.isArray(j)&&j.length){ s.innerHTML=j.map(d=>'<option value="'+esc(d.id)+'">'+esc(d.nome)+' ('+esc(d.id)+') · '+d.n+' fraude(s)</option>').join(''); }
+    else { s.innerHTML='<option value="">(log indisponível — HeraclitusDB ligado?)</option>'; }
+  }catch(e){ s.innerHTML='<option value="">(log indisponível)</option>'; }
+}
+async function run(payload){
   const go=document.getElementById('go'), out=document.getElementById('out'), st=document.getElementById('status');
-  go.disabled=true; st.textContent='a investigar… (o Gemma pode levar alguns segundos)'; out.innerHTML='';
+  go.disabled=true; st.textContent='a investigar… (do log + Gemma pode levar alguns segundos)'; out.innerHTML='';
   try{
     const r=await fetch('/investigar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({devedor:document.getElementById('devedor').value, texto:document.getElementById('texto').value})});
+      body:JSON.stringify(payload)});
     const j=await r.json();
     if(j.erro){ out.innerHTML='<p style="color:#b00">Erro: '+esc(j.erro)+'</p>'; return; }
     const d=j.dossie||{};
@@ -106,7 +173,7 @@ async function investigar(){
   }catch(e){ out.innerHTML='<p style="color:#b00">Falha: '+esc(e.message)+'</p>'; }
   finally{ go.disabled=false; }
 }
-refreshGemma(); setInterval(refreshGemma, 5000);
+refreshGemma(); setInterval(refreshGemma, 5000); loadDevedores();
 </script></body></html>"""
 
 
@@ -125,6 +192,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/health"):
             self._send(200, json.dumps({"gemma": LocalLLM().available()}))
+        elif self.path.startswith("/devedores"):
+            try:
+                self._send(200, json.dumps(_devedores_log(), ensure_ascii=False))
+            except Exception as e:  # noqa: BLE001 — HeraclitusDB pode estar em baixo
+                self._send(200, json.dumps({"erro": f"{type(e).__name__}: {e}"}))
         elif self.path == "/" or self.path.startswith("/index"):
             self._send(200, _PAGE.replace("__EXEMPLO__", _CASO_EXEMPLO),
                        "text/html; charset=utf-8")
@@ -139,12 +211,16 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(n) or b"{}")
             devedor = (body.get("devedor") or "").strip()
-            texto = body.get("texto") or ""
+            fonte = body.get("fonte") or "texto"
             if not devedor:
                 self._send(400, json.dumps({"erro": "informe o devedor"}))
                 return
-            r = investigar(devedor, textos=[texto] if texto.strip() else None,
-                           use_llm_agent=True)
+            if fonte == "log":
+                r = _investigar_log(devedor)  # dados REAIS do HeraclitusDB
+            else:
+                texto = body.get("texto") or ""
+                r = investigar(devedor, textos=[texto] if texto.strip() else None,
+                               use_llm_agent=True)
             self._send(200, json.dumps(r, default=_json_seguro, ensure_ascii=False))
         except Exception as e:  # noqa: BLE001 — devolve o erro à página
             self._send(500, json.dumps({"erro": f"{type(e).__name__}: {e}"}))
