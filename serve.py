@@ -113,19 +113,22 @@ h2:before{content:'';width:4px;height:16px;background:#1351B4;border-radius:2px}
 <div class="top"><div>⚖️</div><h1>LABRA-AGU · Agente Investigativo</h1>
 <span id="gemma" class="badge">a verificar Gemma…</span></div><div class="acc"></div>
 <div class="wrap">
-  <h2>Caso a investigar</h2>
-  <textarea id="texto">__EXEMPLO__</textarea>
+  <h2>Investigar um caso REAL (log do HeraclitusDB)</h2>
   <div class="row">
-    <input type="text" id="devedor" value="CPF_DEV1" placeholder="CPF/CNPJ do devedor">
-    <button id="go" onclick="investigar()">▶ Investigar (texto)</button>
+    <select id="devlog"><option value="">a carregar devedores…</option></select>
+    <button id="go" onclick="investigarLog()">▶ Investigar do log</button>
     <span id="status" class="motor"></span>
   </div>
 
-  <h2>… ou investigar um caso REAL do log (HeraclitusDB)</h2>
-  <div class="row">
-    <select id="devlog"><option value="">a carregar devedores…</option></select>
-    <button onclick="investigarLog()">▶ Investigar do log</button>
-  </div>
+  <details style="margin-top:18px">
+    <summary style="cursor:pointer;color:#0C326F;font-weight:600">… ou colar um caso novo para teste (modo texto)</summary>
+    <textarea id="texto" style="margin-top:10px">__EXEMPLO__</textarea>
+    <div class="row">
+      <input type="text" id="devedor" value="CPF_DEV1" placeholder="devedor que aparece no texto">
+      <button onclick="investigar()">▶ Investigar (texto)</button>
+    </div>
+    <p class="motor">No modo texto o devedor tem de aparecer no texto colado (ex.: CPF_DEV1). Para casos reais usa o dropdown acima.</p>
+  </details>
   <div id="out"></div>
 </div>
 <script>
@@ -155,7 +158,13 @@ async function run(payload){
     const j=await r.json();
     if(j.erro){ out.innerHTML='<p style="color:#b00">Erro: '+esc(j.erro)+'</p>'; return; }
     const d=j.dossie||{};
-    let h='<h2>Passos do agente (cadeia de raciocínio)</h2><div id="steps"></div>';
+    let h='';
+    if(!((d.achados||[]).length)){
+      h+='<div style="background:#FCF3E3;border:1px solid #e0c98a;border-radius:10px;padding:12px 14px;margin:10px 0;color:#7a5b00">'
+        +'⚠️ Nenhuma fraude para <b>'+esc(j.devedor||'')+'</b> nos dados investigados.<br>'
+        +'No modo <b>texto</b>, o devedor tem de aparecer no texto colado. Para um caso real, escolhe no <b>dropdown do log</b> acima.</div>';
+    }
+    h+='<h2>Passos do agente (cadeia de raciocínio)</h2><div id="steps"></div>';
     h+='<h2>Dossiê</h2><div class="kpi">'
       +'<div class="c"><div class="n">'+(d.achados||[]).length+'</div><div class="l">Fraudes</div></div>'
       +'<div class="c"><div class="n">'+(d.essenciais||[]).length+'</div><div class="l">Provas essenciais</div></div>'
