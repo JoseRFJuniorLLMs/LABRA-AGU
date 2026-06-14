@@ -129,7 +129,7 @@ h2:before{content:'';width:4px;height:16px;background:#1351B4;border-radius:2px}
       <input type="text" id="devedor" value="__DEVEXEMPLO__" placeholder="CPF/CNPJ que aparece no texto">
       <button onclick="investigar()">▶ Investigar (texto)</button>
     </div>
-    <p class="motor">No modo texto o devedor tem de aparecer no texto colado (ex.: CPF_DEV1). Para casos reais usa o dropdown acima.</p>
+    <p class="motor">No modo texto o devedor tem de aparecer no texto colado (ex.: 158.813.998-03). Para casos reais usa o dropdown acima.</p>
   </details>
   <div id="out"></div>
 </div>
