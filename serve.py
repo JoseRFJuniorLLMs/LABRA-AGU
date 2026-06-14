@@ -76,15 +76,17 @@ def _investigar_log(devedor: str, use_llm: bool = True) -> dict:
     r = ForensicAgent(_graph_log(), client=None, llm=llm).investigar(dev)
     return {**r, "devedor": dev}
 
+# CPF/CNPJ FICTÍCIOS mas com dígitos verificadores VÁLIDOS (o parser valida-os).
 _CASO_EXEMPLO = (
-    "CPF_DEV1 transferiu quotas para CNPJ_OFF1, que nomeou o cunhado CPF_LAR1 com plenos poderes.\n"
-    "CPF_DEV1 transferiu R$ 9.000,00 para CPF_LAR1 em 01/02/2026.\n"
-    "CPF_DEV1 transferiu R$ 9.300,00 para CPF_LAR1 em 02/02/2026.\n"
-    "CPF_DEV1 transferiu R$ 8.700,00 para CPF_LAR1 em 03/02/2026.\n"
-    "CPF_DEV1 pagou propina de R$ 100.000,00 ao agente público CPF_AG1 em 01/03/2026.\n"
+    "158.813.998-03 transferiu quotas para 11.417.075/3645-57, que nomeou o cunhado 698.797.309-17 com plenos poderes.\n"
+    "158.813.998-03 transferiu R$ 9.000,00 para 698.797.309-17 em 01/02/2026.\n"
+    "158.813.998-03 transferiu R$ 9.300,00 para 698.797.309-17 em 02/02/2026.\n"
+    "158.813.998-03 transferiu R$ 8.700,00 para 698.797.309-17 em 03/02/2026.\n"
+    "158.813.998-03 pagou propina de R$ 100.000,00 ao agente público 568.151.884-18 em 01/03/2026.\n"
     "Consta penhora em 05/06/2026. 2026-06-10 14:32:11 UPDATE alteracoes "
-    "registro de CPF_DEV1 campo=data de=08/06/2026 para=01/05/2026 por=op_junta_47"
+    "registro de 158.813.998-03 campo=data de=08/06/2026 para=01/05/2026 por=op_junta_47"
 )
+_DEVEDOR_EXEMPLO = "158.813.998-03"
 
 _PAGE = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -124,7 +126,7 @@ h2:before{content:'';width:4px;height:16px;background:#1351B4;border-radius:2px}
     <summary style="cursor:pointer;color:#0C326F;font-weight:600">… ou colar um caso novo para teste (modo texto)</summary>
     <textarea id="texto" style="margin-top:10px">__EXEMPLO__</textarea>
     <div class="row">
-      <input type="text" id="devedor" value="CPF_DEV1" placeholder="devedor que aparece no texto">
+      <input type="text" id="devedor" value="__DEVEXEMPLO__" placeholder="CPF/CNPJ que aparece no texto">
       <button onclick="investigar()">▶ Investigar (texto)</button>
     </div>
     <p class="motor">No modo texto o devedor tem de aparecer no texto colado (ex.: CPF_DEV1). Para casos reais usa o dropdown acima.</p>
@@ -207,7 +209,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001 — HeraclitusDB pode estar em baixo
                 self._send(200, json.dumps({"erro": f"{type(e).__name__}: {e}"}))
         elif self.path == "/" or self.path.startswith("/index"):
-            self._send(200, _PAGE.replace("__EXEMPLO__", _CASO_EXEMPLO),
+            self._send(200, _PAGE.replace("__EXEMPLO__", _CASO_EXEMPLO)
+                       .replace("__DEVEXEMPLO__", _DEVEDOR_EXEMPLO),
                        "text/html; charset=utf-8")
         else:
             self._send(404, json.dumps({"erro": "rota desconhecida"}))
