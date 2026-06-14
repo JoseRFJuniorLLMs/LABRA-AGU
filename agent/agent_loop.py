@@ -15,6 +15,7 @@ Cada passo do agente é registado (trace) e, com `client`, vira EVENTO no log �
 a "cadeia de raciocínio" auditável que a IA agêntica regulada exige (XAI).
 O humano fica no circuito: o agente RECOMENDA e RASCUNHA; o procurador assina.
 """
+import datetime
 import json
 from typing import List
 
@@ -77,14 +78,24 @@ class ForensicAgent:
                 "n_transacoes": n_tx, "marcos": self.g.marcos_datas()}
 
     def t_correr_detectores(self, dev):
-        out = []
+        out, vistos = [], set()
         for fn in CATALOG.values():
             for a in fn(self.g):
-                if a.get("devedor_alvo") == dev:
-                    out.append({"pattern": a["pattern"],
-                                "severidade": a["severidade"],
-                                "envolvidos": a["envolvidos"],
-                                "source_events": sorted(a.get("source_events", set()))})
+                if a.get("devedor_alvo") != dev:
+                    continue
+                # dedup: eventos repetidos no log (re-ingestões) geram condutas
+                # idênticas — colapsa por (padrão + descrição) para a peça não
+                # repetir o mesmo fato.
+                chave = (a["pattern"], a.get("descricao", ""))
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
+                out.append({"pattern": a["pattern"],
+                            "severidade": a["severidade"],
+                            "envolvidos": a["envolvidos"],
+                            "descricao": a.get("descricao", ""),
+                            "conclusao_juridica": a.get("conclusao_juridica", ""),
+                            "source_events": sorted(a.get("source_events", set()))})
         return out
 
     def _beneficiario(self, estado):
@@ -179,35 +190,49 @@ class ForensicAgent:
     def _redigir(self, estado, usou_llm: bool) -> dict:
         patterns = list(dict.fromkeys(a["pattern"] for a in estado["achados"]))
         medidas = list(dict.fromkeys(_MEDIDAS[p] for p in patterns if p in _MEDIDAS))
-        dispositivos = LegalMapper().subsume(patterns)["dispositivos"]
-        base = {"medidas": medidas, "dispositivos": dispositivos,
+        sub = LegalMapper().subsume(patterns)
+        base = {"medidas": medidas, "dispositivos": sub["dispositivos"],
                 "provas_essenciais": estado["essenciais"],
                 "valor_estimado": estado["valor"]}
         if usou_llm:
             try:
-                base["texto"] = self._redigir_llm(estado, medidas, dispositivos)
+                base["texto"] = self._redigir_llm(estado, medidas, sub)
                 return base
             except Exception:
                 pass
-        base["texto"] = _peca_template(estado, medidas, dispositivos)
+        base["texto"] = _peca_template(estado, medidas, sub["dispositivos"])
         return base
 
-    def _redigir_llm(self, estado, medidas, dispositivos) -> str:
+    def _redigir_llm(self, estado, medidas, sub) -> str:
+        """Gemma redige a PETIÇÃO COMPLETA, ancorada só nos achados (sem inventar)."""
+        dados = {
+            "devedor": (estado.get("caso") or {}).get("entidade") or estado["devedor"],
+            "inscricao": estado["devedor"],
+            "fatos": [{"conduta": (a.get("descricao") or a["pattern"]),
+                       "gravidade": a.get("severidade"),
+                       "fundamento": a.get("conclusao_juridica", "")}
+                      for a in estado["achados"]],
+            "enquadramento_legal": sub.get("por_padrao", {}),
+            "medidas_requeridas": medidas,
+            "provas_ulid": estado["essenciais"],
+            "valor_a_recuperar": estado["valor"],
+        }
         msg = [
             {"role": "system", "content": (
-                "Você é procurador da AGU. Redija, em português jurídico conciso, "
-                "os trechos de PEDIDO e FUNDAMENTAÇÃO de uma petição em execução "
-                "fiscal, baseando-se SOMENTE nos achados fornecidos (não invente "
-                "fatos). Cite os dispositivos legais. Mencione que as provas estão "
-                "no log imutável (proveniência por ULID).")},
-            {"role": "user", "content": json.dumps({
-                "devedor": estado["caso"]["entidade"] if estado["caso"] else estado["devedor"],
-                "fraudes": [a["pattern"] for a in estado["achados"]],
-                "medidas_sugeridas": medidas, "dispositivos": dispositivos,
-                "provas_essenciais_ulid": estado["essenciais"],
-                "valor_estimado": estado["valor"]}, ensure_ascii=False)},
+                "Você é Procurador(a) da Fazenda Nacional. Redija uma PETIÇÃO completa, "
+                "formal e coesa, em português jurídico, dirigida ao Juízo da Execução "
+                "Fiscal, com as seções, nesta ordem: (1) endereçamento ao Juízo; "
+                "(2) qualificação da União/Fazenda Nacional e do executado; "
+                "(3) 'I – DOS FATOS', narrando o esquema de blindagem com base nas "
+                "condutas fornecidas; (4) 'II – DO DIREITO', subsumindo cada conduta ao "
+                "respectivo dispositivo; (5) 'III – DAS PROVAS', citando os ULIDs do log "
+                "imutável (cadeia de custódia, reconstrução AS OF); (6) 'IV – DOS "
+                "PEDIDOS', numerados; (7) valor da causa e fecho ('Nestes termos, pede "
+                "deferimento'). Baseie-se SOMENTE nos dados fornecidos — NÃO invente "
+                "fatos, nomes, valores ou dispositivos. Não use placeholders vazios.")},
+            {"role": "user", "content": json.dumps(dados, ensure_ascii=False)},
         ]
-        return self.llm.chat(msg)
+        return self.llm.chat(msg, max_tokens=2200)
 
 
 def _resumo(estado):
@@ -218,21 +243,77 @@ def _resumo(estado):
             "tem_rede": bool(estado["rede"])}
 
 
+def _brl(v) -> str:
+    return f"{(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _peca_template(estado, medidas, dispositivos) -> str:
-    nome = estado["caso"]["entidade"] if estado["caso"] else estado["devedor"]
-    fraudes = ", ".join(a["pattern"].replace("_", " ") for a in estado["achados"]) or "—"
+    """PETIÇÃO formal completa (modo determinístico, sem LLM). Estrutura de peça
+    real: endereçamento, qualificação, FATOS, DIREITO, PROVAS, PEDIDOS, valor."""
+    from .legal_mapper import LegalMapper
+    nome = (estado.get("caso") or {}).get("entidade") or estado["devedor"]
+    dev = estado["devedor"]
+    achados = estado["achados"]
     val = estado["valor"] or 0.0
-    val_br = f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    linhas = [
-        "PETIÇÃO — execução fiscal (minuta gerada para revisão)",
-        f"Devedor: {nome} ({estado['devedor']})",
-        f"Fraudes detectadas: {fraudes}",
-        "",
-        "DO PEDIDO:",
-    ]
-    linhas += [f"  - {m};" for m in medidas] or ["  - (sem medida mapeada)"]
-    linhas += ["", "DA FUNDAMENTAÇÃO: " + (", ".join(dispositivos) or "—"),
-               "", "DAS PROVAS (cadeia de custódia, por ULID no HeraclitusDB):"]
-    linhas += [f"  - {u}" for u in (estado["essenciais"] or ["(sem prova essencial isolada)"])]
-    linhas += ["", f"VALOR ESTIMADO A RECUPERAR: R$ {val_br}"]
-    return "\n".join(linhas)
+    hoje = datetime.date.today().strftime("%d/%m/%Y")
+    patterns = list(dict.fromkeys(a["pattern"] for a in achados))
+    por_padrao = LegalMapper().subsume(patterns).get("por_padrao", {})
+
+    L = ["EXCELENTÍSSIMO(A) SENHOR(A) DOUTOR(A) JUIZ(A) DE DIREITO DA VARA DE "
+         "EXECUÇÕES FISCAIS", "", "Processo de Execução Fiscal nº _______________", ""]
+    L.append(
+        "A UNIÃO (FAZENDA NACIONAL), pessoa jurídica de direito público, representada "
+        "pela Procuradoria-Geral da Fazenda Nacional, nos autos da execução fiscal em "
+        "epígrafe, vem, respeitosamente, à presença de Vossa Excelência, com fundamento "
+        "nos arts. 50 do Código Civil, 792 do CPC e 185 do CTN, requerer a instauração "
+        "de INCIDENTE DE DESCONSIDERAÇÃO DA PERSONALIDADE JURÍDICA c/c MEDIDA DE "
+        f"INDISPONIBILIDADE DE BENS em face de {nome} (inscrição nº {dev}), pelos fatos "
+        "e fundamentos a seguir expostos (PETIÇÃO gerada pelo agente LABRA-AGU para "
+        "revisão e subscrição).")
+    L += ["", "I – DOS FATOS"]
+    L.append(
+        "Da análise cruzada de fontes oficiais (Junta Comercial, Cartório de Notas, "
+        "COAF e respectivos extratos), com prova preservada em log imutável e auditável, "
+        "apurou-se esquema de blindagem patrimonial estruturado pelo executado, "
+        "consubstanciado nas seguintes condutas:")
+    if achados:
+        for i, a in enumerate(achados, 1):
+            desc = (a.get("descricao") or a["pattern"].replace("_", " ")).strip().rstrip(".")
+            L.append(f"  {i}. {desc} (gravidade: {a.get('severidade', '?')}).")
+    else:
+        L.append("  (nenhuma conduta detectada nos dados analisados)")
+    L.append(f"O montante dissipado em prejuízo da Fazenda Pública é estimado em "
+             f"R$ {_brl(val)}.")
+
+    L += ["", "II – DO DIREITO"]
+    if por_padrao:
+        for p, enqs in por_padrao.items():
+            for e in enqs:
+                L.append(f"  • {p.replace('_', ' ')} — {e['tipo']} ({e['dispositivo']}): "
+                         + (e.get("ementa") or "").strip())
+    L.append("Dispositivos aplicáveis: " + (", ".join(dispositivos) or "—") + ".")
+
+    L += ["", "III – DAS PROVAS (CADEIA DE CUSTÓDIA)"]
+    L.append(
+        "A prova é rastreável por identificador único e imutável (ULID) no log "
+        "append-only do HeraclitusDB, admitindo reconstrução do estado AS OF de "
+        "qualquer data:")
+    for u in (estado["essenciais"] or ["a proveniência consta dos eventos-fonte nos autos"]):
+        L.append(f"  • {u}")
+
+    L += ["", "IV – DOS PEDIDOS", "Ante o exposto, requer a Vossa Excelência:"]
+    letras = "abcdefghijklmno"
+    ped = list(medidas) or ["a apuração e responsabilização pelas condutas descritas"]
+    k = 0
+    for m in ped:
+        L.append(f"  {letras[k]}) {m};")
+        k += 1
+    L.append(f"  {letras[k]}) a decretação de indisponibilidade de bens até o limite de "
+             f"R$ {_brl(val)};")
+    k += 1
+    L.append(f"  {letras[k]}) a citação dos envolvidos para, querendo, manifestarem-se.")
+
+    L += ["", f"Dá-se à causa o valor de R$ {_brl(val)}.", "",
+          "Nestes termos, pede deferimento.", f"Brasília/DF, {hoje}.", "",
+          "PROCURADOR(A) DA FAZENDA NACIONAL"]
+    return "\n".join(L)
